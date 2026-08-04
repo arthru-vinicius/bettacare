@@ -1,0 +1,56 @@
+# =============================================================================
+# Credenciais — nunca versionar. O repositório é público.
+# =============================================================================
+firmware/*/config.h
+.env
+.env.*
+!.env.example
+
+# =============================================================================
+# Node / monorepo
+# =============================================================================
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+
+# Next.js (apps/web)
+.next/
+out/
+
+# Build do servidor (apps/server)
+dist/
+build/
+
+# Drizzle — artefatos gerados; as migrations em si SÃO versionadas
+drizzle/meta/_journal.json.bak
+
+# Testes e cobertura
+coverage/
+.playwright-mcp/
+test-results/
+playwright-report/
+
+# =============================================================================
+# Firmware — artefatos de compilação do Arduino IDE
+# =============================================================================
+firmware/**/build/
+*.bin
+*.elf
+*.hex
+
+# =============================================================================
+# Ferramentas e ambiente local
+# =============================================================================
+.claude/
+.idea/
+.vscode/
+tmp/
+*.log
+npm-debug.log*
+
+# =============================================================================
+# Sistema operacional
+# =============================================================================
+.DS_Store
+Thumbs.db
+desktop.ini

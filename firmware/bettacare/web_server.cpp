@@ -1,15 +1,18 @@
 #include "web_server.h"
+#include "api_client.h"
+#include "app_state.h"
 #include "config.h"
-#include "light.h"
-#include "temperature.h"
+#include "device_config.h"
+#include "event_log.h"
 #include "fan.h"
+#include "light.h"
 #include "rtc_manager.h"
+#include "temperature.h"
 #include "wifi_manager.h"
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 #include <ElegantOTA.h>
 #include <WiFi.h>
-#include <ctype.h>
 #include <string.h>
 
 static AsyncWebServer _server(80);
@@ -24,15 +27,6 @@ static unsigned long _ota_progress_ms = 0;
 #ifndef CORS_ALLOWED_ORIGIN
 #define CORS_ALLOWED_ORIGIN ""
 #endif
-
-static bool _is_valid_percent_param(const String &value) {
-  if (value.isEmpty() || value.length() > 3) return false;
-  for (size_t i = 0; i < value.length(); ++i) {
-    if (!isdigit((unsigned char)value[i])) return false;
-  }
-  int pct = value.toInt();
-  return pct >= 0 && pct <= 100;
-}
 
 static bool _cors_enabled() {
   return strlen(CORS_ALLOWED_ORIGIN) > 0;
@@ -161,54 +155,59 @@ static String _build_wifi_setup_page(const String &message, bool isError) {
 }
 
 /**
- * @brief Constrói o JSON de estado completo do sistema e serializa para String.
- * Formato:
- * {
- *   "light":       { "on": bool },
- *   "temperature": { "celsius": float|null, "available": bool, "valid": bool },
- *   "fan":         { "on": bool, "speed_percent": int, "rpm": int,
- *                    "trigger_c": float, "off_c": float },
- *   "rtc":         { "time": "HH:MM", "available": bool,
- *                    "on_time": "HH:MM", "off_time": "HH:MM" }
- * }
+ * Estado corrente, para diagnóstico direto no dispositivo.
+ *
+ * Útil exatamente quando o servidor não está acessível — é o "está vivo e o
+ * que ele acha que está acontecendo" sem depender de nada externo.
  */
 static String _build_json() {
-  DynamicJsonDocument doc(512);
+  JsonDocument doc;
 
-  // Luminária
-  JsonObject light_obj = doc.createNestedObject("light");
-  light_obj["on"]      = light_get_state();
+  JsonObject light_obj  = doc["light"].to<JsonObject>();
+  light_obj["on"]       = light_get_state();
+  light_obj["source"]   = light_source_name(light_get_source());
 
-  // Temperatura
-  JsonObject temp_obj   = doc.createNestedObject("temperature");
-  bool temp_avail       = temperature_available();
-  bool temp_valid       = temperature_is_fresh();
-  temp_obj["available"] = temp_avail;
-  temp_obj["valid"]     = temp_valid;
-  if (temp_valid) {
+  JsonObject temp_obj   = doc["temperature"].to<JsonObject>();
+  temp_obj["available"] = temperature_available();
+  temp_obj["valid"]     = temperature_is_fresh();
+  temp_obj["age_ms"]    = temperature_age_ms();
+  if (temperature_is_fresh()) {
     temp_obj["celsius"] = serialized(String(temperature_read(), 1));
   } else {
-    temp_obj["celsius"] = (char*)nullptr;  // null no JSON
+    temp_obj["celsius"] = nullptr;
   }
 
-  // Ventoinha
-  JsonObject fan_obj       = doc.createNestedObject("fan");
+  JsonObject fan_obj       = doc["fan"].to<JsonObject>();
   fan_obj["on"]            = fan_is_on();
   fan_obj["speed_percent"] = fan_get_speed_percent();
   fan_obj["rpm"]           = fan_get_rpm();
-  fan_obj["trigger_c"]     = serialized(String(fan_get_trigger_c(), 1));
-  fan_obj["off_c"]         = serialized(String(fan_get_off_c(), 1));
+  fan_obj["mode"]          = fan_mode_name(fan_get_mode_report());
 
-  // RTC
-  JsonObject rtc_obj   = doc.createNestedObject("rtc");
+  JsonObject rtc_obj   = doc["rtc"].to<JsonObject>();
   rtc_obj["time"]      = rtc_get_time_str();
   rtc_obj["available"] = rtc_available();
-  rtc_obj["on_time"]   = rtc_get_on_time();
-  rtc_obj["off_time"]  = rtc_get_off_time();
+  rtc_obj["lost_power"] = rtc_lost_power();
 
-  String response;
-  serializeJson(doc, response);
-  return response;
+  JsonObject cfg_obj    = doc["config"].to<JsonObject>();
+  cfg_obj["version"]    = device_config_version();
+  cfg_obj["on_time"]    = device_config_on_time();
+  cfg_obj["off_time"]   = device_config_off_time();
+  DeviceConfig cfg_atual = device_config_snapshot();
+  cfg_obj["trigger_c"]  = serialized(String(cfg_atual.fan_trigger_c, 1));
+  cfg_obj["off_c"]      = serialized(String(cfg_atual.fan_off_c, 1));
+
+  JsonObject srv_obj        = doc["server"].to<JsonObject>();
+  srv_obj["failures"]       = api_client_consecutive_failures();
+  srv_obj["last_success_ms"] = api_client_last_success_ms();
+  srv_obj["pending_events"] = event_log_pending();
+
+  doc["fw_version"] = FW_VERSION;
+  doc["device_id"]  = DEVICE_ID;
+  doc["uptime_ms"]  = millis();
+
+  String out;
+  serializeJson(doc, out);
+  return out;
 }
 
 void webserver_init() {
@@ -225,65 +224,6 @@ void webserver_init() {
   // GET /status — consulta estado sem alterar nada
   _server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!_require_auth(request)) return;
-    _send_json(request, 200, _build_json());
-  });
-
-  // GET /toggle — alterna luminária sem cancelar a automação por horário.
-  // O schedule continua ativo: na próxima transição de período a luminária
-  // voltará a seguir o horário configurado em config.h.
-  _server.on("/toggle", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (!_require_auth(request)) return;
-    light_toggle();
-    Serial.println("[WebServer] Luminaria alternada via web");
-    _send_json(request, 200, _build_json());
-  });
-
-  // GET /temperature — retorna apenas leitura de temperatura
-  _server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (!_require_auth(request)) return;
-    DynamicJsonDocument doc(128);
-    bool avail       = temperature_available();
-    bool valid       = temperature_is_fresh();
-    doc["available"] = avail;
-    doc["valid"]     = valid;
-    if (valid) {
-      doc["celsius"] = serialized(String(temperature_read(), 1));
-    } else {
-      doc["celsius"] = (char*)nullptr;
-    }
-    String response;
-    serializeJson(doc, response);
-    _send_json(request, 200, response);
-  });
-
-  // GET /fan_toggle — alterna ventoinha; congela controle automático até próximo RTC_ON.
-  // Liga na última velocidade manual se estiver desligada; desliga se estiver ligada.
-  _server.on("/fan_toggle", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (!_require_auth(request)) return;
-    fan_toggle_web();
-    Serial.println("[WebServer] Ventoinha alternada via web");
-    _send_json(request, 200, _build_json());
-  });
-
-  // GET /fan_speed?value=0..100 — define velocidade da ventoinha via web.
-  // Congela controle automático até próximo RTC_ON. value=0 equivale a desligar.
-  _server.on("/fan_speed", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (!_require_auth(request)) return;
-
-    if (!request->hasParam("value")) {
-      _send_json(request, 400, "{\"error\":\"Parametro value obrigatorio (0-100)\"}");
-      return;
-    }
-
-    String rawValue = request->getParam("value")->value();
-    if (!_is_valid_percent_param(rawValue)) {
-      _send_json(request, 400, "{\"error\":\"Parametro value invalido (use inteiro 0-100)\"}");
-      return;
-    }
-
-    int pct = rawValue.toInt();
-    fan_set_speed_web(pct);
-    Serial.printf("[WebServer] Velocidade da ventoinha: %d%%\n", pct);
     _send_json(request, 200, _build_json());
   });
 

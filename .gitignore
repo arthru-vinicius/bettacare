@@ -12,6 +12,7 @@ firmware/*/config.h
 node_modules/
 .pnpm-store/
 *.tsbuildinfo
+.turbo/
 
 # Next.js (apps/web)
 .next/
@@ -54,3 +55,4 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 desktop.ini
+dist-test/

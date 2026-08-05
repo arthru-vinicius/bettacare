@@ -1,0 +1,7 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+# O drizzle-kit depende do esbuild, cujo postinstall busca o binário da
+# plataforma. Sem isso o `db:generate` não roda.
+allowBuilds:
+  esbuild: true

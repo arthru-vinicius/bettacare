@@ -13,6 +13,25 @@ Escrito do lado da aplicação, para o agente que vai escrever a role Ansible.
 
 ---
 
+## 0. O que mudou desde a primeira entrega deste documento
+
+A implementação está pronta e os números abaixo são **medidos**, não estimados.
+Cinco pontos divergem da versão anterior deste documento e valem leitura antes
+de escrever a role:
+
+| Mudou | Antes | Agora |
+|---|---|---|
+| Comando de build | `npm ci && npm run build` | pnpm via corepack — seção 1 |
+| **Limite de memória** | "256 MB é confortável" | **é obrigatório fixar um** — seção 7 |
+| Retenção | por dias (`TELEMETRY_RETENTION_DAYS`) | por tamanho, 1 GiB (`DB_SIZE_LIMIT_BYTES`) — seção 5 |
+| Campo `ack` do ESP32 | `[91]` | `[{id, ok, code?}]` — seção 4 |
+| Env vars | — | três novas, uma removida — seção 6 |
+
+Nada disso muda porta, uid, healthcheck ou o desenho de rede. O impacto na
+infraestrutura é uma linha de `deploy.resources.limits.memory` no compose.
+
+---
+
 ## 1. Empacotamento
 
 | Item | Valor |
@@ -40,14 +59,22 @@ Arquivos de segredo montados no container precisam ser legíveis por uid 1000.
 
 ### Comandos
 
+O monorepo é gerenciado por **pnpm workspaces + Turborepo**. O `Dockerfile`
+já encapsula tudo — o servidor não precisa conhecer nenhum destes comandos,
+que rodam só dentro do build da CI:
+
 ```bash
 # build (roda na CI, nunca no servidor)
-npm ci
-npm run build          # gera o export estático do Next + bundle do servidor
+corepack enable
+pnpm install --frozen-lockfile
+pnpm turbo build       # export estático do Next + bundle do servidor
 
-# start (entrypoint do container)
-node dist/server.js
+# start (entrypoint do container, já no CMD da imagem)
+node dist/main.js
 ```
+
+**Imagem final: 59 MB**, `node:24-alpine`, uid `1000`. Contém apenas o bundle
+do servidor, as migrations, o export do PWA e as dependências de produção.
 
 ---
 
@@ -115,7 +142,7 @@ o contrato exige. Sem TLS, como acordado.
   "uptime_ms": 84213000,
   "device_time": "2026-08-04T17:31:02Z",
   "config_version": 7,
-  "ack": [91],
+  "ack": [{ "id": 91, "ok": false, "code": "light.gpio_fault" }],
   "light":       { "on": true },
   "temperature": { "celsius": 26.5, "available": true, "valid": true },
   "fan":         { "on": false, "speed_percent": 0, "rpm": 0, "mode": "auto" },
@@ -144,7 +171,7 @@ menos de 300 bytes:
     "fan_off_c": 27.5,
     "telemetry_interval_ms": 3000
   },
-  "commands": [ { "id": 91, "action": "light.toggle" } ]
+  "commands": [ { "id": 91, "action": "light.set", "on": true } ]
 }
 ```
 
@@ -154,19 +181,39 @@ torno de 100 bytes.
 
 ### Tolerância a reenvio
 
-O par `(device_id, boot_id, seq)` tem constraint `UNIQUE`, e a inserção usa
-`ON CONFLICT DO NOTHING`. Reenviar o mesmo POST:
+A guarda é o `seq`: `device_state` guarda `last_boot_id` e `last_seq`, e um POST
+cujo `seq` não avança dentro do mesmo `boot_id` é descartado. Uma checagem de
+uma linha, por chave primária.
+
+> **Correção em relação à versão anterior deste documento.** Havíamos prometido
+> `UNIQUE (device_id, boot_id, seq)`. Isso **não é possível**: `telemetry` virou
+> tabela particionada (ver seção 5), e o PostgreSQL exige que a chave de
+> partição entre em toda constraint única. A alternativa —
+> `UNIQUE (received_at, device_id, boot_id, seq)` — enfraqueceria a garantia
+> sem entregar nada, porque o mesmo `seq` reenviado poderia entrar duas vezes se
+> as tentativas caíssem em meses diferentes. A guarda por `last_seq` cobre o
+> reenvio real, que acontece em segundos.
+
+Reenviar o mesmo POST:
 
 - não duplica linha de histórico
-- não corrompe o estado corrente (o upsert é idempotente por natureza)
+- não corrompe o estado corrente
 - **devolve a mesma lista de comandos** — um comando só sai da fila quando o
   dispositivo o confirma no campo `ack` de um POST seguinte, não quando é
   entregue. Se a resposta se perder, o comando é reentregue.
 
 Cada `action` é idempotente por construção: são `light.set`, `fan.set_speed`,
-`config.apply` — estados desejados, não alternâncias. O `light.toggle` do
-sistema antigo foi eliminado justamente porque reentrega de um toggle inverte
-o estado duas vezes.
+`fan.set_mode`, `config.apply` e `device.reboot` — estados desejados, não
+alternâncias. O `light.toggle` do sistema antigo foi eliminado justamente
+porque reentrega de um toggle inverte o estado duas vezes.
+
+### O `ack` deixou de ser uma lista de números
+
+Também uma correção: prevíamos `"ack": [91]`, que só sabe dizer "recebi" e
+nunca "não consegui". Agora é `[{id, ok, code?}]`, e quando `ok` é falso o
+`code` traz o motivo (`light.gpio_fault`, `cmd.unsupported`). É dele que sai a
+mensagem de erro que o usuário lê na interface. Custa alguns bytes por comando
+confirmado, e comandos são raros.
 
 ### Carimbo de horário
 
@@ -187,8 +234,35 @@ Ou seja: o dispositivo fala a cada 3 s, mas o banco só ganha linha quando algo
 muda ou quando passa um minuto sem mudança. Isso dá da ordem de **730 mil linhas
 por ano**, algo como 150 MB com índices — sem pressão sobre o cluster.
 
-Retenção: telemetria bruta por 365 dias, com rollup horário permanente para os
-relatórios. Ambos configuráveis por env var.
+### Retenção: por tamanho, não por idade
+
+Mudou em relação à versão anterior. O usuário pediu um teto rígido: o database
+`bettacare` **nunca passa de 1 GiB** (`DB_SIZE_LIMIT_BYTES`, ajustável).
+
+O detalhe que obrigou a mudar o desenho: `DELETE` no PostgreSQL **não devolve
+espaço ao sistema de arquivos**. As linhas viram tuplas mortas, o `VACUUM`
+comum apenas marca páginas como reutilizáveis, e `pg_database_size()` não se
+move. Um job que apagasse linhas antigas e medisse depois entraria em laço até
+esvaziar a tabela. `VACUUM FULL` devolveria o espaço, mas pega
+`ACCESS EXCLUSIVE` e precisa do dobro do tamanho da tabela em disco livre —
+inaceitável num cluster compartilhado.
+
+O que devolve espaço de imediato é `DROP TABLE`. Por isso **`telemetry` e
+`events` são particionadas por mês** (`PARTITION BY RANGE (received_at)`), e a
+purga derruba a partição mais antiga inteira. Instantânea, sem lock na tabela
+pai.
+
+`telemetry_hourly`, `settings`, `commands`, `devices` e `component_status` são
+isentos: somam poucos megabytes e são o que mantém os relatórios funcionando
+sobre períodos cuja telemetria bruta já foi descartada.
+
+Com o volume acima, o teto de 1 GiB só seria alcançado por volta do sexto ano —
+na prática ele é uma **rede de segurança** contra um componente defeituoso que
+comece a gerar eventos em rajada, não o regime normal.
+
+**Nada disso exige ação da infraestrutura.** O particionamento é criado pelas
+migrations, e a purga roda dentro do processo. Só registro aqui porque muda o
+comportamento de crescimento do database no cluster compartilhado.
 
 ---
 
@@ -264,8 +338,16 @@ operando sozinho sem rede, com a última configuração conhecida.
 | `LOG_LEVEL` | não | não | `info` |
 | `TZ_DISPLAY` | não | não | `America/Recife` |
 | `PG_POOL_MAX` | não | não | `4` |
-| `TELEMETRY_RETENTION_DAYS` | não | não | `365` |
+| `DB_SIZE_LIMIT_BYTES` | não | não | `1073741824` (1 GiB) |
+| `DEVICE_OFFLINE_AFTER_S` | não | não | `60` |
+| `COMMAND_TTL_S` | não | não | `90` |
+| `WEB_ROOT` | não | não | `/app/web` (já definido no `Dockerfile`) |
 | `ALLOWED_USER_EMAILS` | não | não | vazio (aceita qualquer e-mail que o Access autenticar) |
+
+`TELEMETRY_RETENTION_DAYS` **deixou de existir** — a retenção passou a ser por
+tamanho. Se ela já tiver entrado no playbook, remova; a aplicação a ignora.
+
+Há um `.env.example` na raiz do repositório com todas elas comentadas.
 
 `DEVICE_INGEST_TOKEN` é o valor esperado no header `X-Api-Token` do ESP32.
 
@@ -318,15 +400,34 @@ Como o processo Node é o PID 1 e trata o sinal explicitamente, não é necessá
 `stdout` e `stderr`, uma linha JSON por evento (pino). Nada é escrito em arquivo
 dentro do container.
 
-### Consumo
+### Consumo — **fixar um limite de memória é obrigatório**
 
-| | Valor |
+Isto corrige a estimativa da versão anterior. Os números abaixo são medidos, com
+a imagem final rodando contra um Postgres 17 real.
+
+| Cenário | RAM |
 |---|---|
-| RAM em operação normal | **~80 MB** |
-| RAM em pico (geração de relatório) | **~150 MB** |
-| CPU | desprezível — 0,33 req/s do ESP32 e acessos humanos esparsos |
+| **Com `--memory=256m`**, em repouso | **32 MB** (12% do limite) |
+| **Com `--memory=256m`**, após 300 POSTs + relatório de 30 dias | **40 MB** (15%) |
+| **Sem limite**, em repouso, num host de 15,5 GB | **215 MB** |
 
-Um limite de 256 MB é confortável, se o agente do servidor quiser fixar um.
+CPU desprezível nos três casos: 0,02% no pico.
+
+A diferença não é a aplicação consumindo mais — é o **V8 dimensionando o heap
+pela memória visível**. Sem `deploy.resources.limits.memory` no compose, o Node
+enxerga a RAM inteira do host e deixa o heap crescer bem além do necessário,
+porque nada o pressiona a coletar. Com o limite, ele lê o cgroup e se comporta.
+
+**Recomendação: fixar 256 MB.** Sobra folga de 6× sobre o pico medido, e é o
+que faz a aplicação caber no orçamento de um servidor de 8 GB compartilhado.
+Não recomendo abaixo de 192 MB sem medir de novo.
+
+```yaml
+deploy:
+  resources:
+    limits:
+      memory: 256M
+```
 
 ### Processos de segundo plano
 
@@ -371,7 +472,7 @@ entra pela LAN, não pelo túnel. Se no futuro houver integração máquina a m�
 ## 9. Checklist da seção 9, respondido
 
 - [x] **Repositório, branch, privado?** — `arthru-vinicius/bettacare`, `main`, **público** (sem token no vault)
-- [x] **Build e start** — `npm ci && npm run build` / `node dist/server.js`
+- [x] **Build e start** — `pnpm install --frozen-lockfile && pnpm turbo build` / `node dist/main.js` (ambos já no `Dockerfile`)
 - [x] **uid do processo** — `1000:1000` (usuário `node`)
 - [x] **Porta interna da UI** — `3000`, não publicada
 - [x] **Porta do ESP32** — `8080`, publicada em `<IP_DO_SERVIDOR>:8080:8080`
@@ -382,5 +483,5 @@ entra pela LAN, não pelo túnel. Se no futuro houver integração máquina a m�
 - [x] **Persistência** — stateless além do banco
 - [x] **Contrato de telemetria** — seção 4
 - [x] **Opção da seção 4.4** — Opção A, com comandos na resposta do POST
-- [x] **RAM e background** — ~80 MB normal / ~150 MB pico; dois `setInterval` internos
+- [x] **RAM e background** — 32–40 MB **com limite de 256 MB fixado**, que é requisito e não sugestão; dois `setInterval` internos
 - [x] **Service token do Access** — não necessário

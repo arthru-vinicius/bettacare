@@ -1,39 +1,35 @@
 #pragma once
 
+#include <Arduino.h>
+
 /**
- * @brief Inicializa o barramento OneWire e o sensor DS18B20.
- *        Configura resolução de 12 bits e modo de conversão não-bloqueante.
- *        Detecta presença do sensor e imprime resultado no Serial.
+ * DS18B20 em modo não-bloqueante.
+ *
+ * A conversão a 12 bits leva ~750 ms. O firmware antigo já não bloqueava
+ * esperando por ela, e essa parte é portada como está — é a solução certa.
+ *
+ * O que muda: o barramento passa a ser **re-sondado periodicamente**. Antes o
+ * sensor era procurado só no boot, então um cabo que caísse depois deixava
+ * `available` verdadeiro para sempre e as leituras apenas paravam de mudar. O
+ * requisito de "saber quando um componente deixou de ser reconhecido" não tem
+ * como ser atendido sem isto.
  */
 void temperature_init();
 
-/**
- * @brief Gerencia o ciclo de conversão do DS18B20 de forma não-bloqueante.
- *        Deve ser chamado no loop(). Inicia uma nova conversão quando a
- *        anterior terminar (~750 ms) e atualiza o valor em cache.
- */
+/** Chamado a cada ciclo do loop. Gerencia conversão e re-sondagem. */
 void temperature_update();
 
-/**
- * @brief Retorna a última temperatura lida pelo DS18B20, em graus Celsius.
- *        Não bloqueia — retorna o valor em cache da última conversão concluída.
- * @return temperatura em °C, ou -127,0 se o sensor não estiver disponível
- *         ou se nenhuma conversão tiver sido concluída ainda.
- */
+/** Última leitura válida em °C, ou NAN se não houver nenhuma. */
 float temperature_read();
 
-/**
- * @brief Retorna true se o sensor DS18B20 foi encontrado durante a inicialização.
- */
+/** O sensor está presente no barramento 1-Wire? */
 bool temperature_available();
 
-/**
- * @brief Retorna true quando já existe pelo menos uma leitura válida em cache.
- */
+/** Houve ao menos uma leitura válida desde que o sensor foi encontrado? */
 bool temperature_has_valid_reading();
 
-/**
- * @brief Retorna true quando a última leitura válida ainda está recente.
- *        Leituras antigas/stale são tratadas como indisponíveis para automação.
- */
+/** A última leitura válida é recente o bastante para decidir algo? */
 bool temperature_is_fresh();
+
+/** Idade da última leitura válida, em ms. É o que vira `temp.stale`. */
+uint32_t temperature_age_ms();

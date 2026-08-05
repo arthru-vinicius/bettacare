@@ -1,9 +1,27 @@
 #pragma once
 
 // =============================================================================
-// CONFIGURAÇÃO — copie este arquivo para config.h e preencha os valores reais
-// config.h está no .gitignore e nunca deve ser versionado
+// CONFIGURAÇÃO — copie para config.h e preencha os valores reais.
+// config.h está no .gitignore e nunca deve ser versionado: este repositório
+// é público.
 // =============================================================================
+//
+// O que mudou em relação ao sistema antigo:
+//
+//   - Não há mais MQTT. O dispositivo fala HTTP direto com o servidor na LAN.
+//   - Horários da luminária e limiares da ventoinha NÃO ficam mais aqui como
+//     fonte de verdade. O servidor manda a configuração e o NVS a guarda como
+//     cache offline. Os valores abaixo são apenas o que vale antes do primeiro
+//     contato com o servidor — e depois de uma limpeza de NVS.
+//
+// Bibliotecas necessárias (Arduino Library Manager):
+//   ArduinoJson >= 7.0   (a API v7 é usada; v6 não compila)
+//   RTClib, OneWire, DallasTemperature, ElegantOTA
+
+// --- Identidade do dispositivo -----------------------------------------------
+// Precisa casar com o slug usado no servidor: minúsculas, dígitos e hífen.
+#define DEVICE_ID      "aquarium-01"
+#define FW_VERSION     "2.0.0"
 
 // --- Wi-Fi -------------------------------------------------------------------
 #define WIFI_SSID      "YOUR_NETWORK_HERE"
@@ -11,86 +29,87 @@
 #define WIFI_RECONNECT_INTERVAL_MS  10000UL   // tentativa de reconexão (não-bloqueante)
 #define WIFI_RECOVERY_TIMEOUT_MS    180000UL  // após esse tempo offline, habilita AP de recuperação
 #define WIFI_RECOVERY_MAX_ATTEMPTS  12        // ou após esse número de tentativas sem sucesso
-#define WIFI_RECOVERY_AP_SSID_PREFIX "Aquarium-Setup"
+#define WIFI_RECOVERY_AP_SSID_PREFIX "BettaCare-Setup"
 
 // --- Rede (IP estático ou DHCP) -----------------------------------------------
-// Defina NET_LOCAL_IP como "0.0.0.0" para usar DHCP (o IP atribuído aparece no
-// Serial Monitor). Use IP estático para facilitar o acesso ao OTA — escolha um
-// número alto (ex: .200) fora da faixa DHCP do roteador para evitar conflitos.
+// "0.0.0.0" usa DHCP. Com o servidor nunca iniciando conexão, o IP do ESP32
+// deixou de importar — DHCP é a escolha certa agora.
+// Com DHCP ("0.0.0.0") os dois campos abaixo são ignorados — e DHCP é a escolha
+// certa agora, porque o servidor nunca inicia conexão com o dispositivo.
 #define NET_LOCAL_IP   "0.0.0.0"
-#define NET_GATEWAY    "192.168.1.1"    // ajuste para o gateway da sua rede
+#define NET_GATEWAY    "REPLACE_WITH_GATEWAY_IP"
 #define NET_SUBNET     "255.255.255.0"
 
+// --- Servidor BettaCare ------------------------------------------------------
+// Porta de ingestão, publicada com bind explícito no IP da LAN do servidor.
+// HTTP puro: é tráfego local e o custo de TLS num ESP32 não se paga aqui.
+// Placeholder de propósito: um IP plausível aqui passaria despercebido e o
+// dispositivo falharia em silêncio contra um endereço que não é o seu.
+#define SERVER_HOST         "REPLACE_WITH_SERVER_IP"
+#define SERVER_PORT         8080
+#define SERVER_TELEMETRY_PATH "/api/v1/telemetry"
+
+// Precisa ser idêntico ao DEVICE_INGEST_TOKEN do servidor.
+#define SERVER_API_TOKEN    "REPLACE_WITH_THE_SAME_TOKEN_AS_THE_SERVER"
+
+// Timeout de uma requisição inteira. Roda na task de rede, então bloquear aqui
+// não afeta o botão físico nem a histerese da ventoinha.
+#define HTTP_TIMEOUT_MS     4000
+
+// --- Padrões usados antes do primeiro contato com o servidor -----------------
+// Depois do primeiro POST bem-sucedido, quem manda é o servidor.
+#define DEFAULT_LIGHT_ON_HOUR    10
+#define DEFAULT_LIGHT_ON_MIN      0
+#define DEFAULT_LIGHT_OFF_HOUR   17
+#define DEFAULT_LIGHT_OFF_MIN     0
+#define DEFAULT_FAN_TRIGGER_C   29.0f
+#define DEFAULT_FAN_OFF_C       27.5f
+#define DEFAULT_TELEMETRY_INTERVAL_MS 3000
+#define DEFAULT_HEARTBEAT_INTERVAL_MS 60000
+
 // --- Pinos de hardware -------------------------------------------------------
-#define PIN_SSR        23   // Relé SSR40DA — controle da luminária LED
-#define PIN_DS18B20    19   // DS18B20 — sensor de temperatura (OneWire)
-#define PIN_BUTTON     18   // Push button — liga/desliga luminária (INPUT_PULLUP)
-#define PIN_POT        34   // Potenciômetro B10K — controle de velocidade da ventoinha (ADC)
-#define PIN_FAN        17   // Pino 4 da fan 4 pinos — sinal PWM de controle (25 kHz, direto no ESP32)
-#define PIN_FAN_TACH   25   // Pino 3 da fan 4 pinos — tacômetro (INPUT_PULLUP, open-drain)
+#define PIN_SSR        23   // Relé SSR40DA — luminária LED
+#define PIN_DS18B20    19   // DS18B20 (OneWire)
+#define PIN_BUTTON     18   // Push button (INPUT_PULLUP)
+#define PIN_POT        34   // Potenciômetro B10K (ADC)
+#define PIN_FAN        17   // Fan 4 pinos, pino 4 — PWM 25 kHz
+#define PIN_FAN_TACH   25   // Fan 4 pinos, pino 3 — tacômetro (open-drain)
 
-// DS3231SN usa I2C padrão do ESP32: SDA = GPIO 21, SCL = GPIO 22
+// DS3231SN usa o I2C padrão do ESP32: SDA = GPIO 21, SCL = GPIO 22
 
-// --- Horário automático da luminária (DS3231SN) ------------------------------
-// A automação é sempre ativa: o botão físico/web apenas sobrepõe o estado
-// atual e a rotina volta a agir na próxima transição de horário.
-// A interface também pode alterar estes horários em runtime (persistidos em NVS).
-#define RTC_ON_HOUR    10   // hora de ligar  (0–23)
-#define RTC_ON_MIN      0   // minuto de ligar (0–59)
-#define RTC_OFF_HOUR   17   // hora de desligar (0–23)
-#define RTC_OFF_MIN     0   // minuto de desligar (0–59)
-
-// --- NTP (sincronização de horário ao inicializar com Wi-Fi) -----------------
-// Fuso: Brasília = UTC-3 (sem horário de verão desde 2019)
+// --- NTP ---------------------------------------------------------------------
+// Fuso: Brasília = UTC-3 (sem horário de verão desde 2019).
+// O RTC guarda hora local; o servidor carimba tudo em UTC do lado dele.
 #define NTP_SERVER1      "pool.ntp.org"
 #define NTP_SERVER2      "time.google.com"
-#define NTP_UTC_OFFSET   (-3 * 3600)   // UTC-3 em segundos
+#define NTP_UTC_OFFSET   (-3 * 3600)
 
 // --- Controle automático da ventoinha ----------------------------------------
-// Histérese: liga acima de TRIGGER, inicia cooldown abaixo de OFF.
-// O intervalo entre os dois valores evita liga/desliga rápido (hunting).
-// A interface também pode alterar estes thresholds em runtime (persistidos em NVS).
-#define TEMP_FAN_TRIGGER    29.0f   // °C — temperatura para ligar a ventoinha
-#define TEMP_FAN_OFF        27.5f   // °C — temperatura para iniciar cooldown (< TRIGGER)
-#define FAN_COOLDOWN_MIN    30      // minutos de funcionamento após atingir TEMP_FAN_OFF
+// Estes NÃO vêm do servidor: são a forma da curva, não a política. O servidor
+// controla apenas os dois limiares de temperatura.
+#define FAN_COOLDOWN_MIN    30      // minutos de funcionamento após atingir o limiar de desligar
+#define FAN_SPEED_LOW       30      // Δ ≤ 1,0 °C acima do gatilho
+#define FAN_SPEED_MED       55      // Δ ≤ 2,0 °C
+#define FAN_SPEED_HIGH      80      // Δ ≤ 3,0 °C
+#define FAN_SPEED_MAX       100     // Δ >  3,0 °C
+#define FAN_FAILSAFE_SPEED  30      // usado no AUTO quando a temperatura fica indisponível
 
-// Velocidades escalonadas por Δ = temperatura – TEMP_FAN_TRIGGER (%)
-#define FAN_SPEED_LOW       30      // Δ ≤ 1,0°C — levemente acima do limiar
-#define FAN_SPEED_MED       55      // Δ ≤ 2,0°C — aquecimento moderado
-#define FAN_SPEED_HIGH      80      // Δ ≤ 3,0°C — aquecimento significativo
-#define FAN_SPEED_MAX       100     // Δ >  3,0°C — situação crítica
-#define FAN_FAILSAFE_SPEED  30      // velocidade usada no AUTO se temperatura ficar indisponível
+// Escalonamento progressivo: se após FAN_ESCALATION_INTERVAL_MIN minutos em
+// RUNNING a temperatura não tiver caído FAN_ESCALATION_DROP_C graus, o piso de
+// velocidade avança um degrau. Zerado no cooldown e na transição para o período ON.
+#define FAN_ESCALATION_INTERVAL_MIN  10
+#define FAN_ESCALATION_DROP_C        0.5f
 
-// Escalonamento progressivo: se após FAN_ESCALATION_INTERVAL_MIN minutos em modo RUNNING
-// a temperatura não tiver caído FAN_ESCALATION_DROP_C graus, o piso de velocidade avança
-// um degrau (LOW → MED → HIGH → MAX). O piso é zerado ao entrar em cooldown ou no RTC_ON.
-#define FAN_ESCALATION_INTERVAL_MIN  10    // minutos por estágio sem queda suficiente
-#define FAN_ESCALATION_DROP_C        0.5f  // queda mínima de temperatura (°C) para não escalar
-
-// Dados de temperatura são considerados stale após este tempo sem leitura válida
+// Leitura de temperatura mais velha que isto deixa de valer como estado atual.
 #define TEMP_MAX_STALE_MS   5000UL
 
-// --- API local ESP32 (controle remoto) ---------------------------------------
-// Se vazio, desativa autenticação da API (NÃO recomendado em produção).
+// --- API local do ESP32 e OTA ------------------------------------------------
+// Continua existindo para diagnóstico direto e recuperação, independente do
+// servidor. Interface de atualização em http://<IP_DO_ESP32>/update
 #define API_AUTH_TOKEN      "REPLACE_WITH_LONG_RANDOM_TOKEN"
+#define OTA_USERNAME        "admin"
+#define OTA_PASSWORD        "REPLACE_WITH_STRONG_PASSWORD"
 
-// Origem permitida para CORS (frontend HTTPS). Deixe vazio para desabilitar CORS.
-// Ex.: "https://aquarium.seudominio.com"
-#define CORS_ALLOWED_ORIGIN ""
-
-// --- OTA (atualização de firmware via rede) ----------------------------------
-// Interface acessível em: http://<IP_DO_ESP32>/update
-// Também protege o portal de recuperação Wi-Fi: /wifi-setup
-#define OTA_USERNAME   "admin"
-#define OTA_PASSWORD   "REPLACE_WITH_STRONG_PASSWORD"
-
-// --- MQTT (HiveMQ Cloud) -----------------------------------------------------
-// Broker gerenciado gratuito — nenhuma instalação necessária no servidor.
-// Crie uma conta em https://console.hivemq.cloud e configure as credenciais.
-// Dois usuários distintos são recomendados: um para o ESP32, outro para o PHP.
-#define MQTT_BROKER_HOST    "SEU_CLUSTER.s1.eu.hivemq.cloud"
-#define MQTT_BROKER_PORT    8883                  // TLS/SSL — não usar 8884 (WebSocket)
-#define MQTT_USER           "betta-care-esp32"    // usuário criado no painel HiveMQ
-#define MQTT_PASSWORD       "SENHA_DO_ESP32_AQUI"
-#define MQTT_CLIENT_ID      "aquarium-esp32"      // deve ser único por dispositivo
-#define MQTT_TEMP_THRESHOLD 0.1f                  // Publicar se temperatura mudar > 0.1 °C
+// ATENÇÃO: a senha de OTA do repositório antigo esteve versionada em texto
+// claro e deve ser considerada comprometida. Ao gravar este firmware, use uma
+// senha nova — não reaproveite a anterior.

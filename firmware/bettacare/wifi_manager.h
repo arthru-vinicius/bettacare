@@ -40,3 +40,15 @@ String wifi_configured_ssid();
  * @return true se credenciais válidas e aceitas; false em caso de validação inválida
  */
 bool wifi_set_credentials(const String &ssid, const String &password);
+
+/**
+ * @brief Quedas de conexão desde o boot. Subindo depressa, o link está instável
+ *        — é o que o servidor usa para classificar o Wi-Fi como degradado.
+ */
+uint16_t wifi_reconnect_count();
+
+/** @brief RSSI atual em dBm, ou -120 se desconectado. */
+int16_t wifi_rssi();
+
+/** @brief IP local, ou string vazia se desconectado. */
+String wifi_local_ip();

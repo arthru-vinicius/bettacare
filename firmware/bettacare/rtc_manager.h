@@ -1,55 +1,40 @@
 #pragma once
+
 #include <Arduino.h>
 
 /**
- * @brief Inicializa a comunicação I2C com o DS3231SN via RTClib.
- *        Detecta presença do módulo e imprime a hora atual no Serial.
+ * DS3231SN e a automação por horário.
+ *
+ * A regra central é sutil e vem intacta do sistema antigo: **a automação só
+ * age na transição de período**. Dentro de uma mesma janela, um override
+ * manual (botão, comando do servidor) é respeitado até a próxima mudança de
+ * horário. Sem isso, apagar a luz às 14h faria a automação reacendê-la no
+ * segundo seguinte.
+ *
+ * O que muda: os horários vêm de `device_config` — do servidor — em vez de
+ * viverem no NVS deste módulo.
  */
 void rtc_init();
 
 /**
- * @brief Sincroniza o DS3231SN com horário NTP (Brasília, UTC-3).
- *        Deve ser chamado após wifi_connect(). Se o NTP falhar,
- *        mantém a hora já armazenada no módulo.
- * @return true quando sincronizado com sucesso; false se indisponível/falhou.
+ * Sincroniza o DS3231 por NTP. **Bloqueia por alguns segundos**, então só pode
+ * ser chamado da task de rede.
  */
 bool rtc_sync_ntp();
 
-/**
- * @brief Retorna a hora atual como string no formato "HH:MM".
- * @return hora formatada, ou "--:--" se o RTC não estiver disponível
- */
+/** Hora local "HH:MM", ou "--:--" se o módulo não responde. */
 String rtc_get_time_str();
 
-/**
- * @brief Retorna true se o DS3231SN foi encontrado durante a inicialização.
- */
 bool rtc_available();
 
-/**
- * @brief Verifica transições de horário e comanda a luminária conforme o
- *        schedule definido em config.h (RTC_ON_* / RTC_OFF_*).
- *
- *        A automação é sempre ativa. O botão físico e o web apenas sobrepõem
- *        o estado dentro do período atual; na próxima transição a luminária
- *        voltará a seguir o schedule normalmente.
- *        Deve ser chamado no loop().
- */
+/** O DS3231 acusou perda de energia — bateria no fim. */
+bool rtc_lost_power();
+
+/** Avalia a janela horária e age só na transição. Chamado no loop. */
 void rtc_check_automation();
 
 /**
- * @brief Retorna o horário de ligar configurado como "HH:MM".
+ * Reavalia imediatamente após o servidor mandar horários novos, para a
+ * mudança valer sem esperar a próxima virada.
  */
-String rtc_get_on_time();
-
-/**
- * @brief Retorna o horário de desligar configurado como "HH:MM".
- */
-String rtc_get_off_time();
-
-/**
- * @brief Atualiza horário de ligar/desligar da automação e persiste em NVS.
- *        A nova programação é aplicada imediatamente.
- * @return true se os valores forem válidos e aplicados.
- */
-bool rtc_set_schedule(uint8_t on_hour, uint8_t on_min, uint8_t off_hour, uint8_t off_min);
+void rtc_reapply_schedule();

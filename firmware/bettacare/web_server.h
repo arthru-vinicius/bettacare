@@ -1,25 +1,21 @@
 #pragma once
 
 /**
- * @brief Configura os headers CORS globais, registra todos os endpoints REST,
- *        inicia o ElegantOTA e sobe o servidor HTTP assíncrono na porta 80.
- *        Se API_AUTH_TOKEN estiver definido em config.h, endpoints da API
- *        exigem autenticação via header X-Api-Token ou query ?token=.
- *        O portal /wifi-setup usa login HTTP Basic com OTA_USERNAME/OTA_PASSWORD.
+ * Servidor HTTP local do próprio ESP32, na porta 80.
  *
- * Endpoints disponíveis:
- *   GET /status           — retorna JSON completo do estado do sistema
- *   GET /toggle           — alterna luminária (não afeta a automação por horário)
- *   GET /temperature      — retorna leitura de temperatura + flags available/valid
- *   GET /fan_toggle       — alterna ventoinha (congela modo auto até próximo RTC_ON)
- *   GET /fan_speed?value= — define velocidade da ventoinha 0–100 (congela até RTC_ON)
- *   GET /wifi-setup       — formulário de configuração Wi-Fi (portal de recuperação)
- *   POST /wifi-setup/save — salva SSID/senha e inicia reconexão não-bloqueante
- *   GET /update           — interface web do ElegantOTA (OTA firmware)
+ * Continua existindo por dois motivos que o servidor BettaCare não cobre:
+ *
+ *   - **OTA** (`/update`) é a única via de atualização de firmware.
+ *   - **Recuperação de Wi-Fi** (`/wifi-setup`) precisa funcionar justamente
+ *     quando não há rede — e portanto quando o servidor é inalcançável.
+ *
+ * O que saiu: as rotas que *mudavam* estado (`/toggle`, alteração de horários
+ * e limiares). Elas competiriam com o servidor pela mesma decisão, e agora o
+ * servidor é a fonte de verdade. O que resta é diagnóstico e recuperação.
+ *
+ * Roda na task de rede, nunca no `loop()`.
  */
 void webserver_init();
 
-/**
- * @brief Manutenção do ElegantOTA. Deve ser chamado no loop().
- */
+/** Manutenção do ElegantOTA. Chamado pela task de rede. */
 void webserver_loop();

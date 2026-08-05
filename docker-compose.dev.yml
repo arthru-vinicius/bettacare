@@ -1,0 +1,24 @@
+# Postgres apenas para desenvolvimento local.
+# NÃO é o compose de produção — lá o Postgres 17 já existe no homelab,
+# compartilhado, sem porta publicada, e o bettacare só recebe a DATABASE_URL.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: bettacare-postgres-dev
+    environment:
+      POSTGRES_USER: bettacare_user
+      POSTGRES_PASSWORD: bettacare_dev
+      POSTGRES_DB: bettacare
+      TZ: UTC
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - bettacare-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bettacare_user -d bettacare"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  bettacare-pgdata:

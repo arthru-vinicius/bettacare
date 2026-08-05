@@ -1,253 +1,213 @@
 #include "rtc_manager.h"
-#include "config.h"
-#include "light.h"
-#include "fan.h"
-#include "wifi_manager.h"
-#include "log_manager.h"
+
 #include <RTClib.h>
 #include <Wire.h>
-#include <time.h>   // getLocalTime(), configTime() — ESP32 Arduino core
-#include <Preferences.h>
+#include <time.h>
+
+#include "config.h"
+#include "device_config.h"
+#include "event_log.h"
+#include "fan.h"
+#include "light.h"
+#include "wifi_manager.h"
 
 static RTC_DS3231 _rtc;
-static bool       _available      = false;
+static bool       _available   = false;
+static bool       _lost_power  = false;
 
-// Horários configurados em config.h
-static uint8_t _on_hour    = RTC_ON_HOUR;
-static uint8_t _on_minute  = RTC_ON_MIN;
-static uint8_t _off_hour   = RTC_OFF_HOUR;
-static uint8_t _off_minute = RTC_OFF_MIN;
+/**
+ * O barramento I2C é tocado pelos **dois núcleos**: o controle local avalia a
+ * automação, e a task de rede sincroniza por NTP. O I2C não é reentrante —
+ * duas transações simultâneas travam o barramento ou devolvem lixo. Toda
+ * conversa com o DS3231 passa por este mutex.
+ */
+static SemaphoreHandle_t _i2c_mutex = nullptr;
 
-// Rastreia o último período (ligado/desligado) para só agir na transição.
-// Isso garante que sobrescritas manuais dentro de um período sejam respeitadas
-// até a próxima mudança de janela horária.
+/**
+ * Hora corrente em minutos desde a meia-noite, ou `TIME_UNKNOWN`.
+ *
+ * `rtc_get_time_str()` é chamado de dentro de `event_log()`, ou seja, de
+ * qualquer núcleo e a qualquer momento. Se ele fizesse I2C, cada linha de log
+ * viraria uma disputa pelo barramento — e, pior, um ciclo de travamento entre
+ * o mutex do log e o do I2C. Lendo deste cache, a função não toca hardware
+ * nenhum.
+ *
+ * `uint16_t` alinhado é lido e escrito em uma instrução no ESP32, então não há
+ * leitura rasgada nem necessidade de mutex aqui.
+ */
+static const uint16_t TIME_UNKNOWN = 0xFFFF;
+static volatile uint16_t _cached_minutes = TIME_UNKNOWN;
+
+/** Atualiza o cache. Só pode ser chamada já segurando `_i2c_mutex`. */
+static void _refresh_cached_time_locked() {
+  if (!_available) {
+    _cached_minutes = TIME_UNKNOWN;
+    return;
+  }
+  DateTime agora = _rtc.now();
+  _cached_minutes = (uint16_t)(agora.hour() * 60 + agora.minute());
+}
+
+static bool _i2c_take(uint32_t ms) {
+  if (_i2c_mutex == nullptr) return false;
+  return xSemaphoreTake(_i2c_mutex, pdMS_TO_TICKS(ms)) == pdTRUE;
+}
+
+static void _i2c_give() {
+  if (_i2c_mutex != nullptr) xSemaphoreGive(_i2c_mutex);
+}
+
+/**
+ * Último período conhecido. É o que faz a automação agir só na transição — e
+ * portanto o que faz um override manual sobreviver dentro da janela.
+ */
 static bool _last_period_on = false;
+static bool _period_known   = false;
 
-#define RTC_CFG_NS       "aq_cfg"
-#define RTC_CFG_KEY_ON   "lt_on"
-#define RTC_CFG_KEY_OFF  "lt_off"
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-static String _format_time(int h, int m) {
-  char buf[6];
-  snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
-  return String(buf);
-}
-
-static bool _is_valid_time(uint8_t h, uint8_t m) {
-  return h <= 23 && m <= 59;
-}
-
-static int _minutes_from_hm(uint8_t h, uint8_t m) {
-  return ((int)h * 60) + (int)m;
-}
-
-static bool _is_valid_minutes(int mins) {
-  return mins >= 0 && mins <= 1439;
-}
-
-static void _hm_from_minutes(int mins, uint8_t& h, uint8_t& m) {
-  if (!_is_valid_minutes(mins)) {
-    h = 0;
-    m = 0;
-    return;
-  }
-  h = (uint8_t)(mins / 60);
-  m = (uint8_t)(mins % 60);
-}
-
-static void _load_schedule_nvs() {
-  Preferences prefs;
-  if (!prefs.begin(RTC_CFG_NS, true)) {
-    Serial.println("[RTC] Falha ao abrir NVS. Usando horarios de config.h");
-    return;
-  }
-
-  int defaultOn  = _minutes_from_hm((uint8_t)RTC_ON_HOUR, (uint8_t)RTC_ON_MIN);
-  int defaultOff = _minutes_from_hm((uint8_t)RTC_OFF_HOUR, (uint8_t)RTC_OFF_MIN);
-  int onMins     = prefs.getInt(RTC_CFG_KEY_ON, defaultOn);
-  int offMins    = prefs.getInt(RTC_CFG_KEY_OFF, defaultOff);
-  prefs.end();
-
-  if (!_is_valid_minutes(onMins) || !_is_valid_minutes(offMins)) {
-    _on_hour    = (uint8_t)RTC_ON_HOUR;
-    _on_minute  = (uint8_t)RTC_ON_MIN;
-    _off_hour   = (uint8_t)RTC_OFF_HOUR;
-    _off_minute = (uint8_t)RTC_OFF_MIN;
-    Serial.println("[RTC] Horarios em NVS invalidos. Usando config.h");
-    return;
-  }
-
-  _hm_from_minutes(onMins, _on_hour, _on_minute);
-  _hm_from_minutes(offMins, _off_hour, _off_minute);
-  Serial.printf("[RTC] Horarios carregados: liga=%s desliga=%s\n",
-                rtc_get_on_time().c_str(), rtc_get_off_time().c_str());
-}
-
-static void _save_schedule_nvs() {
-  Preferences prefs;
-  if (!prefs.begin(RTC_CFG_NS, false)) {
-    Serial.println("[RTC] Falha ao abrir NVS para salvar horarios");
-    return;
-  }
-  prefs.putInt(RTC_CFG_KEY_ON, _minutes_from_hm(_on_hour, _on_minute));
-  prefs.putInt(RTC_CFG_KEY_OFF, _minutes_from_hm(_off_hour, _off_minute));
-  prefs.end();
-}
+static unsigned long _last_probe_ms = 0;
+static const unsigned long PROBE_INTERVAL_MS = 15000;
 
 static bool _period_should_be_on(int current, int on_at, int off_at) {
-  if (on_at < off_at) {
-    // Caso normal: ex. 10:00 – 17:00
-    return (current >= on_at && current < off_at);
-  }
-  // Cruzando meia-noite: ex. 20:00 – 06:00
+  if (on_at < off_at) return (current >= on_at && current < off_at);
+  // Janela cruzando meia-noite, ex.: 20:00–06:00
   return (current >= on_at || current < off_at);
 }
 
-// ---------------------------------------------------------------------------
-// API pública
-// ---------------------------------------------------------------------------
+/**
+ * Procura o módulo e atualiza o cache.
+ *
+ * Registra os eventos **depois de soltar o mutex**, de propósito: `event_log()`
+ * pega o próprio mutex, e logar segurando o do I2C criaria uma ordem de
+ * travamento invertida em relação a `rtc_get_time_str()` — receita de deadlock
+ * entre os dois núcleos.
+ */
+static void _probe() {
+  _last_probe_ms = millis();
+
+  if (!_i2c_take(200)) return;
+  bool encontrado = _rtc.begin();
+  bool mudou = (encontrado != _available);
+  _available = encontrado;
+  bool perdeu_energia = false;
+  if (encontrado) {
+    perdeu_energia = _rtc.lostPower();
+    _lost_power = perdeu_energia;
+  }
+  _refresh_cached_time_locked();
+  _i2c_give();
+
+  if (!mudou) return;
+
+  if (encontrado) {
+    event_log(SEV_INFO, COMP_RTC, "rtc.found",
+              "DS3231 reconhecido; hora %s", rtc_get_time_str().c_str());
+    if (perdeu_energia) {
+      event_log(SEV_WARN, COMP_RTC, "rtc.lost_power",
+                "Relogio perdeu a hora; a bateria provavelmente acabou");
+    }
+  } else {
+    event_log(SEV_ERROR, COMP_RTC, "rtc.missing",
+              "DS3231 nao responde no I2C; verifique SDA (21) e SCL (22)");
+  }
+}
 
 void rtc_init() {
-  _load_schedule_nvs();
+  _i2c_mutex = xSemaphoreCreateMutex();
   Wire.begin();
-  _available = _rtc.begin();
+  _available = false;
+  _probe();
+}
 
-  if (_available) {
-    if (_rtc.lostPower()) {
-      // Bateria fraca: hora pode estar errada — será corrigida pelo NTP em seguida
-      Serial.println("[RTC] Bateria fraca ou primeiro uso. Hora sera ajustada via NTP.");
-    }
-    Serial.print("[RTC] DS3231SN encontrado. Hora atual: ");
-    Serial.println(rtc_get_time_str());
-  } else {
-    Serial.println("[RTC] DS3231SN NAO encontrado. Verifique conexao I2C (SDA=21, SCL=22).");
-  }
+bool rtc_available()  { return _available; }
+bool rtc_lost_power() { return _lost_power; }
+
+String rtc_get_time_str() {
+  uint16_t m = _cached_minutes;   // leitura atômica; não toca o barramento
+  if (m == TIME_UNKNOWN) return "--:--";
+  char buf[6];
+  snprintf(buf, sizeof(buf), "%02u:%02u", (unsigned)(m / 60), (unsigned)(m % 60));
+  return String(buf);
 }
 
 bool rtc_sync_ntp() {
-  if (!wifi_is_connected()) {
-    Serial.println("[RTC] WiFi indisponivel. Pulando sincronizacao NTP sem bloquear o sistema.");
-    return false;
-  }
+  if (!wifi_is_connected()) return false;
 
-  // Configura SNTP com fuso horário de Brasília (UTC-3, sem horário de verão)
   configTime(NTP_UTC_OFFSET, 0, NTP_SERVER1, NTP_SERVER2);
 
-  Serial.print("[RTC] Sincronizando com NTP (Brasilia UTC-3)");
-
-  struct tm timeinfo;
-  bool synced = false;
+  struct tm info;
+  bool ok = false;
   for (int i = 0; i < 8; i++) {
-    if (getLocalTime(&timeinfo)) {
-      synced = true;
-      break;
-    }
-    delay(500);
-    Serial.print(".");
+    if (getLocalTime(&info)) { ok = true; break; }
+    delay(500);   // aceitável: roda na task de rede, não no loop
   }
-  Serial.println();
 
-  if (!synced) {
-    Serial.println("[RTC] Timeout NTP. Usando hora ja armazenada no modulo.");
+  if (!ok) {
+    event_log(SEV_WARN, COMP_RTC, "rtc.ntp_timeout",
+              "NTP nao respondeu; mantendo a hora do modulo");
     return false;
   }
 
-  // Atualiza o DS3231SN com a hora obtida via NTP
   if (_available) {
-    DateTime dt(
-      timeinfo.tm_year + 1900,
-      timeinfo.tm_mon  + 1,
-      timeinfo.tm_mday,
-      timeinfo.tm_hour,
-      timeinfo.tm_min,
-      timeinfo.tm_sec
-    );
-    _rtc.adjust(dt);
-    Serial.print("[RTC] Hora ajustada via NTP: ");
-    Serial.println(rtc_get_time_str());
+    if (!_i2c_take(500)) return false;
+    _rtc.adjust(DateTime(info.tm_year + 1900, info.tm_mon + 1, info.tm_mday,
+                         info.tm_hour, info.tm_min, info.tm_sec));
+    _lost_power = false;
+    _refresh_cached_time_locked();
+    _i2c_give();
+    event_log(SEV_INFO, COMP_RTC, "rtc.ntp_synced",
+              "Hora sincronizada: %s", rtc_get_time_str().c_str());
   } else {
-    Serial.println("[RTC] NTP OK mas modulo RTC indisponivel — usando hora do sistema ESP32.");
+    event_log(SEV_INFO, COMP_RTC, "rtc.ntp_synced",
+              "NTP ok, mas sem modulo RTC; usando a hora interna do ESP32");
   }
-
   return true;
-}
-
-String rtc_get_time_str() {
-  if (!_available) return "--:--";
-  DateTime now = _rtc.now();
-  return _format_time(now.hour(), now.minute());
-}
-
-bool rtc_available() {
-  return _available;
 }
 
 void rtc_check_automation() {
-  if (!_available) return;
+  if (!_available) {
+    if (millis() - _last_probe_ms >= PROBE_INTERVAL_MS) _probe();
+    return;
+  }
 
-  DateTime now = _rtc.now();
+  // Só o controle local lê o relógio no caminho quente; espera curta para
+  // nunca segurar o loop se a task de rede estiver no meio de um NTP.
+  if (_i2c_take(20)) {
+    _refresh_cached_time_locked();
+    _i2c_give();
+  }
 
-  // Converte os horários para minutos desde meia-noite para facilitar a comparação
-  int current = now.hour()   * 60 + now.minute();
-  int on_at   = _on_hour     * 60 + _on_minute;
-  int off_at  = _off_hour    * 60 + _off_minute;
+  uint16_t m = _cached_minutes;
+  if (m == TIME_UNKNOWN) return;
 
-  bool should_be_on = _period_should_be_on(current, on_at, off_at);
+  const DeviceConfig cfg = device_config_snapshot();
 
-  // Só age quando o período muda (on → off ou off → on).
-  // Dentro do mesmo período, sobrescritas manuais são preservadas.
-  if (should_be_on != _last_period_on) {
-    _last_period_on = should_be_on;
-    light_set(should_be_on);
-    if (should_be_on) {
-      // Na transição para o período ON: reseta a ventoinha para modo AUTO.
-      // Overrides manuais anteriores são descartados; pot requer re-calibração.
-      fan_on_rtc_reset();
+  int atual  = (int)m;
+  int liga   = cfg.light_on_hour  * 60 + cfg.light_on_min;
+  int apaga  = cfg.light_off_hour * 60 + cfg.light_off_min;
+
+  bool deveria = _period_should_be_on(atual, liga, apaga);
+
+  // Só age na mudança de período. Dentro do mesmo período, o que o usuário
+  // decidiu manualmente permanece.
+  if (!_period_known || deveria != _last_period_on) {
+    _period_known   = true;
+    _last_period_on = deveria;
+    light_set(deveria, LIGHT_SRC_SCHEDULE);
+    if (deveria) {
+      // Na virada para o período ON, a ventoinha volta ao automático e o pot
+      // precisa ser recalibrado.
+      fan_on_schedule_reset();
     }
-    Serial.printf("[RTC] Automacao: %s luminaria\n", should_be_on ? "ligando" : "desligando");
+    event_log(SEV_INFO, COMP_RTC, "rtc.automation",
+              "Automacao por horario: %s luminaria (%s-%s)",
+              deveria ? "acendendo" : "apagando",
+              device_config_on_time().c_str(),
+              device_config_off_time().c_str());
   }
 }
 
-String rtc_get_on_time() {
-  return _format_time(_on_hour, _on_minute);
-}
-
-String rtc_get_off_time() {
-  return _format_time(_off_hour, _off_minute);
-}
-
-bool rtc_set_schedule(uint8_t on_hour, uint8_t on_min, uint8_t off_hour, uint8_t off_min) {
-  if (!_is_valid_time(on_hour, on_min) || !_is_valid_time(off_hour, off_min)) {
-    return false;
-  }
-
-  _on_hour    = on_hour;
-  _on_minute  = on_min;
-  _off_hour   = off_hour;
-  _off_minute = off_min;
-  _save_schedule_nvs();
-
-  log_eventf("[RTC] Programacao atualizada: liga=%s desliga=%s",
-             rtc_get_on_time().c_str(),
-             rtc_get_off_time().c_str());
-  Serial.printf("[RTC] Programacao atualizada: liga=%s desliga=%s\n",
-                rtc_get_on_time().c_str(),
-                rtc_get_off_time().c_str());
-
-  // Reaplica imediatamente a regra atual para refletir a nova programação.
-  if (_available) {
-    DateTime now = _rtc.now();
-    int current  = now.hour() * 60 + now.minute();
-    int on_at    = _on_hour * 60 + _on_minute;
-    int off_at   = _off_hour * 60 + _off_minute;
-    bool should_be_on = _period_should_be_on(current, on_at, off_at);
-    _last_period_on = !should_be_on;
-    rtc_check_automation();
-  }
-
-  return true;
+void rtc_reapply_schedule() {
+  // Força a reavaliação esquecendo o período conhecido: a próxima chamada de
+  // `rtc_check_automation()` decide do zero com os horários novos.
+  _period_known = false;
 }

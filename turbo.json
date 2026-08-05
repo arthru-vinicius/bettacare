@@ -1,0 +1,30 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "stream",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "out/**", ".next/**", "!.next/cache/**"],
+      // O turbo filtra o ambiente por padrão: variável não declarada aqui não
+      // chega à tarefa. Sem estas duas o carimbo de versão do PWA cairia no
+      // fallback e a atualização forçada nunca dispararia. Declará-las também
+      // as põe na chave de cache, que é o correto: build diferente, saída
+      // diferente.
+      "env": ["BUILD_ID", "MIN_BUILD"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^build"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    }
+  }
+}

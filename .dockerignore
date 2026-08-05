@@ -1,0 +1,41 @@
+# Só o que o build precisa entra no contexto. Um contexto enxuto é a diferença
+# entre um build de 30 s e um de vários minutos na CI.
+
+node_modules
+**/node_modules
+**/.next
+**/out
+**/dist
+**/dist-test
+.turbo
+**/.turbo
+
+# Precisa sair junto com **/dist, e por um motivo que não é óbvio: o
+# .tsbuildinfo é o cache incremental do TypeScript. Vindo da máquina local ele
+# diz que tudo já foi compilado, o tsc não emite nada — e o dist que ele supõe
+# existir é exatamente o que a linha acima acabou de excluir. O resultado é um
+# "Cannot find module" a três estágios de distância da causa.
+**/*.tsbuildinfo
+
+.git
+.github
+.idea
+.vscode
+.claude
+
+docs
+tmp
+firmware
+
+*.log
+coverage
+.playwright-mcp
+test-results
+playwright-report
+
+# Segredos nunca entram na imagem — toda configuração vem de variável de
+# ambiente em runtime, como o contrato do homelab exige.
+.env
+.env.*
+!.env.example
+docker-compose.dev.yml

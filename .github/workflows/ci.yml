@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Sem permissão de escrita: a CI só verifica. Publicar é papel do release.yml,
+# disparado por tag.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+
+    services:
+      # O teste do rollup horário precisa de um Postgres de verdade: ele
+      # verifica uma regressão de SQL (`least(60, NULL)` devolve 60, não NULL)
+      # que nenhum mock reproduziria.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bettacare_user
+          POSTGRES_PASSWORD: bettacare_dev
+          POSTGRES_DB: bettacare
+          TZ: UTC
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U bettacare_user -d bettacare"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm turbo build
+        env:
+          BUILD_ID: ${{ github.sha }}
+
+      - name: Typecheck
+        run: pnpm turbo typecheck
+
+      - name: Testes
+        run: pnpm turbo test
+        env:
+          DATABASE_URL: postgresql://bettacare_user:bettacare_dev@127.0.0.1:5433/bettacare
+
+  imagem:
+    # Constrói a imagem em todo PR para que uma quebra no Dockerfile apareça
+    # aqui, e não na hora de publicar uma tag. Não empurra nada.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (sem push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          build-args: |
+            BUILD_ID=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

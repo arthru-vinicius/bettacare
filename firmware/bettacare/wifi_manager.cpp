@@ -1,6 +1,6 @@
 #include "wifi_manager.h"
 #include "config.h"
-#include "log_manager.h"
+#include "event_log.h"
 #include <Preferences.h>
 #include <WiFi.h>
 
@@ -33,6 +33,7 @@ static bool          _recovery_ap_active = false;
 static unsigned long _last_attempt_ms    = 0;
 static unsigned long _offline_since_ms   = 0;
 static uint16_t      _attempt_count      = 0;
+static uint16_t      _reconnects         = 0;
 
 static String _configured_ssid;
 static String _configured_password;
@@ -139,7 +140,8 @@ static void _start_recovery_ap() {
   }
 
   _recovery_ap_active = true;
-  log_eventf("[WiFi] AP recuperacao ativo: %s", _recovery_ap_ssid.c_str());
+  event_log(SEV_WARN, COMP_WIFI, "wifi.ap_mode",
+            "AP de recuperacao ativo: %s", _recovery_ap_ssid.c_str());
   Serial.printf("[WiFi] AP de recuperacao ativo: SSID=%s IP=%s\n",
                 _recovery_ap_ssid.c_str(),
                 WiFi.softAPIP().toString().c_str());
@@ -154,7 +156,8 @@ static void _stop_recovery_ap() {
   WiFi.mode(WIFI_STA);
   _recovery_ap_active = false;
   _recovery_ap_ssid   = "";
-  log_event("[WiFi] AP recuperacao desativado");
+  event_log(SEV_INFO, COMP_WIFI, "wifi.ap_mode_off",
+            "AP de recuperacao desativado");
   Serial.println("[WiFi] AP de recuperacao desativado");
 }
 
@@ -194,7 +197,9 @@ void wifi_check_reconnect() {
   if (status == WL_CONNECTED) {
     if (!_ever_connected) {
       _ever_connected = true;
-      log_eventf("[WiFi] Conectado: %s", WiFi.localIP().toString().c_str());
+      event_log(SEV_INFO, COMP_WIFI, "wifi.connected",
+                "Conectado, IP %s, RSSI %d dBm",
+                WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
       Serial.print("[WiFi] Conectado! IP: ");
       Serial.println(WiFi.localIP());
     }
@@ -207,7 +212,8 @@ void wifi_check_reconnect() {
 
   if (_ever_connected) {
     _ever_connected = false;
-    log_event("[WiFi] Conexao perdida");
+    _reconnects++;
+    event_log(SEV_WARN, COMP_WIFI, "wifi.disconnected", "Conexao perdida");
     Serial.println("[WiFi] Conexao perdida. Mantendo operacao local.");
   }
 
@@ -271,4 +277,14 @@ bool wifi_set_credentials(const String &ssid, const String &password) {
 
   _start_connect_attempt("credentials-update");
   return true;
+}
+
+uint16_t wifi_reconnect_count() { return _reconnects; }
+
+int16_t wifi_rssi() {
+  return WiFi.status() == WL_CONNECTED ? (int16_t)WiFi.RSSI() : -120;
+}
+
+String wifi_local_ip() {
+  return WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : String("");
 }

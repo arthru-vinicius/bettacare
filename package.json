@@ -1,0 +1,26 @@
+{
+  "name": "bettacare",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Controle e monitoramento do aquário — servidor Hono, PWA Next.js e firmware ESP32",
+  "license": "MIT",
+  "packageManager": "pnpm@11.15.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:generate": "pnpm --filter @bettacare/server db:generate",
+    "db:migrate": "pnpm --filter @bettacare/server db:migrate",
+    "db:up": "docker compose -f docker-compose.dev.yml up -d",
+    "db:down": "docker compose -f docker-compose.dev.yml down"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.8",
+    "typescript": "^5.9.3"
+  }
+}

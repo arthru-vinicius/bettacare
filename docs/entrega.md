@@ -6,7 +6,11 @@ Referência da Fase 5.
 
 ## A imagem
 
-`node:24-alpine`, **59 MB**, uid `1000` (usuário `node`), `CMD node dist/main.js`.
+`node:24-alpine`, uid `1000` (usuário `node`), `CMD node dist/main.js`.
+
+**~59 MB** de transferência (comprimido) e **274 MB** em disco — destes, 234 MB
+são a base oficial do Node e ~40 MB são a aplicação. Os dois números medem
+coisas diferentes e é fácil citar um achando que é o outro.
 
 Três estágios, e a separação é sobre cache: mexer no código não reinstala
 `node_modules`, e é a instalação que domina o tempo do build.

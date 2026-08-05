@@ -10,7 +10,7 @@ import {
 } from "@bettacare/contract";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { fetchCommands, fetchOverview, sendCommand } from "./api";
+import { ApiError, fetchCommands, fetchOverview, sendCommand } from "./api";
 
 /** Intervalo de atualização quando a aba está visível. */
 const POLL_MS = 4000;
@@ -46,6 +46,15 @@ export function useDevice() {
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [commands, setCommands] = useState<CommandItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * O servidor respondeu, mas ainda não conhece nenhum aquário.
+   *
+   * É estado diferente de erro, e confundir os dois foi um bug real: enquanto o
+   * ESP32 nunca tinha feito o primeiro POST, o `/api/overview` devolvia 404 e a
+   * interface anunciava "sem contato com o servidor" — apontando o dedo para a
+   * peça que estava funcionando.
+   */
+  const [deviceMissing, setDeviceMissing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [feedback, setFeedback] = useState<CommandFeedback | null>(null);
@@ -62,9 +71,19 @@ export function useDevice() {
       setData(overview);
       setCommands(cmds);
       setError(null);
+      setDeviceMissing(false);
       return { overview, cmds };
     } catch (e) {
       if ((e as Error).name === "AbortError") return null;
+
+      // 404 é o servidor dizendo que respondeu e não conhece o aquário — o
+      // oposto de estar fora do ar.
+      if (e instanceof ApiError && e.status === 404) {
+        setDeviceMissing(true);
+        setError(null);
+        return null;
+      }
+
       setError(e instanceof Error ? e.message : "falha ao carregar");
       return null;
     } finally {
@@ -173,6 +192,7 @@ export function useDevice() {
     data,
     commands,
     error,
+    deviceMissing,
     loading,
     refreshing,
     feedback,

@@ -9,6 +9,7 @@ import { Home } from "@/components/screens/Home";
 import { Light } from "@/components/screens/Light";
 import { Logs } from "@/components/screens/Logs";
 import { Report } from "@/components/screens/Report";
+import { formatTime } from "@/lib/format";
 import { useAppUpdate } from "@/lib/useAppUpdate";
 import { useDevice } from "@/lib/useDevice";
 
@@ -26,7 +27,8 @@ export default function Page() {
   const [aba, setAba] = useState<Aba>("inicio");
   const [subAba, setSubAba] = useState<SubAba>("saude");
 
-  const { data, error, loading, refreshing, feedback, refresh, send } = useDevice();
+  const { data, error, deviceMissing, loading, refreshing, feedback, refresh, send } =
+    useDevice();
   const update = useAppUpdate();
 
   const grave = data?.overall === "critical" || data?.overall === "offline";
@@ -41,9 +43,30 @@ export default function Page() {
         </div>
       ) : null}
 
+      {/*
+        Três causas distintas, três mensagens. Confundi-las na primeira versão
+        fez a interface acusar o servidor por um problema do aquário — e a
+        pessoa lendo iria depurar a peça errada.
+
+        A ordem importa: se não há contato com o servidor, nada se sabe sobre o
+        aquário, então essa mensagem vem primeiro e as outras nem aparecem.
+      */}
       {error !== null && !loading ? (
         <div className="banner offline">
           <span>Sem contato com o servidor</span>
+        </div>
+      ) : deviceMissing && !loading ? (
+        <div className="banner update">
+          <span>Aguardando o primeiro contato do aquário</span>
+        </div>
+      ) : data !== null && !data.device.online ? (
+        <div className="banner offline">
+          <span>
+            Sem contato com o controlador do aquário
+            {data.device.last_seen_at
+              ? ` desde ${formatTime(data.device.last_seen_at)}`
+              : ""}
+          </span>
         </div>
       ) : null}
 
@@ -70,6 +93,7 @@ export default function Page() {
         <section className={`screen ${aba === "inicio" ? "active" : ""}`}>
           <Home
             data={data}
+            deviceMissing={deviceMissing}
             onOpenReport={() => {
               setAba("diagnostico");
               setSubAba("relatorios");

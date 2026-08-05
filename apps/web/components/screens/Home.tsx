@@ -13,9 +13,11 @@ import { formatTemp, timeAgo } from "@/lib/format";
  */
 export function Home({
   data,
+  deviceMissing,
   onOpenReport,
 }: {
   data: OverviewResponse | null;
+  deviceMissing: boolean;
   onOpenReport: () => void;
 }) {
   const relogio = useLocalClock();
@@ -78,17 +80,26 @@ export function Home({
       <div className="card">
         <div className="row-between">
           <span className="c-label" style={{ marginBottom: 0 }}>
-            Dispositivo
+            Controlador
           </span>
-          <span className={`pill ${online ? "on" : "danger"}`}>
+          {/*
+            "Nunca se apresentou" e "sumiu" são situações diferentes, e chamar a
+            primeira de OFFLINE em vermelho assusta à toa: nada quebrou, o
+            aquário só ainda não foi ligado pela primeira vez.
+          */}
+          <span
+            className={`pill ${deviceMissing ? "off" : online ? "on" : "danger"}`}
+          >
             <span className="pill-dot" />
-            {online ? "ONLINE" : "OFFLINE"}
+            {deviceMissing ? "AGUARDANDO" : online ? "ONLINE" : "OFFLINE"}
           </span>
         </div>
         <div className="c-sub">
-          {online
-            ? `Última leitura ${timeAgo(s?.updated_at)}`
-            : `Sem contato ${timeAgo(data?.device.last_seen_at)}`}
+          {deviceMissing
+            ? "Nenhum contato ainda — grave o firmware no ESP32 para começar"
+            : online
+              ? `Última leitura ${timeAgo(s?.updated_at)}`
+              : `Sem contato ${timeAgo(data?.device.last_seen_at)}`}
         </div>
       </div>
     </>

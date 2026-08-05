@@ -73,8 +73,20 @@ pnpm turbo build       # export estático do Next + bundle do servidor
 node dist/main.js
 ```
 
-**Imagem final: 59 MB**, `node:24-alpine`, uid `1000`. Contém apenas o bundle
-do servidor, as migrations, o export do PWA e as dependências de produção.
+Imagem final em `node:24-alpine`, uid `1000`. Contém apenas o bundle do
+servidor, as migrations, o export do PWA e as dependências de produção.
+
+| | Tamanho |
+|---|---|
+| Transferência (comprimido, o que o servidor baixa) | **~59 MB** |
+| Em disco, descomprimido | **274 MB** |
+| — dos quais são a base `node:24-alpine` | 234 MB |
+| — dos quais são a aplicação | **~40 MB** |
+
+Registro os dois porque medem coisas diferentes e a confusão entre eles é fácil:
+o primeiro é o que passa pela rede, o segundo é o que ocupa no NVMe. Se outros
+serviços do homelab já usarem `node:24-alpine`, as camadas da base são
+compartilhadas e o custo marginal cai para os ~40 MB.
 
 ---
 

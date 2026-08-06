@@ -7,6 +7,7 @@ import {
 } from "@bettacare/contract";
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -110,7 +111,12 @@ export const deviceState = pgTable("device_state", {
   tempCelsius: real("temp_celsius"),
   tempAvailable: boolean("temp_available").notNull().default(false),
   tempValid: boolean("temp_valid").notNull().default(false),
-  tempAgeMs: integer("temp_age_ms"),
+  /**
+   * `bigint` e nulo, não `integer`: a idade vem de `millis()` e cabe em
+   * `uint32`, que não cabe num `integer` do PostgreSQL. Nulo é "nunca houve
+   * leitura válida" — ver `temperatureStateSchema` no contrato.
+   */
+  tempAgeMs: bigint("temp_age_ms", { mode: "number" }),
 
   fanOn: boolean("fan_on").notNull().default(false),
   fanSpeedPercent: smallint("fan_speed_percent").notNull().default(0),
@@ -125,7 +131,8 @@ export const deviceState = pgTable("device_state", {
   wifiIp: text("wifi_ip"),
   wifiReconnects: integer("wifi_reconnects").notNull().default(0),
 
-  uptimeMs: integer("uptime_ms"),
+  /** `millis()` do dispositivo: estoura `integer` com ~25 dias ligado. */
+  uptimeMs: bigint("uptime_ms", { mode: "number" }),
   configVersion: integer("config_version").notNull().default(0),
 
   /**

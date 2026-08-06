@@ -78,6 +78,11 @@ function evaluateTemp(t: TelemetryRequest): HealthVerdict {
   if (celsius === null) {
     return { comp: "temp", status: "missing", code: "temp.sensor_lost", detail };
   }
+  // Sem idade não há leitura válida — o sensor está no barramento mas nunca
+  // entregou nada aproveitável, que é diferente de ter sumido.
+  if (age_ms === null) {
+    return { comp: "temp", status: "degraded", code: "temp.stale", detail };
+  }
   if (age_ms > TEMP_STALE_MS) {
     return { comp: "temp", status: "degraded", code: "temp.stale", detail };
   }

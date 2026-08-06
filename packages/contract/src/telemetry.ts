@@ -5,8 +5,10 @@ import { deviceEventSchema, MAX_EVENTS_PER_POST } from "./events.js";
 import { deviceHealthReportSchema } from "./health.js";
 import {
   deviceIdSchema,
+  INT32_MAX,
   isoInstantSchema,
   timeOfDaySchema,
+  UINT32_MAX,
 } from "./primitives.js";
 
 /**
@@ -40,8 +42,15 @@ export const temperatureStateSchema = z.object({
   available: z.boolean(),
   /** A última leitura passou no CRC? */
   valid: z.boolean(),
-  /** Idade da leitura em ms — é o que define `temp.stale`. */
-  age_ms: z.int().min(0),
+  /**
+   * Idade da leitura em ms — é o que define `temp.stale`.
+   *
+   * **Nulo quando nunca houve leitura válida.** A idade de algo que não
+   * aconteceu não é um número grande, é ausência — e tratá-la como número foi
+   * o bug que derrubava o ingest: o firmware mandava `UINT32_MAX` e a coluna
+   * `integer` estourava.
+   */
+  age_ms: z.int().min(0).max(UINT32_MAX).nullable(),
 });
 export type TemperatureState = z.infer<typeof temperatureStateSchema>;
 
@@ -69,7 +78,7 @@ export const wifiStateSchema = z.object({
   rssi: z.int().min(-120).max(0),
   ip: z.ipv4().nullable(),
   /** Reconexões desde o boot. Subindo depressa = link instável. */
-  reconnects: z.int().min(0).default(0),
+  reconnects: z.int().min(0).max(INT32_MAX).default(0),
 });
 export type WifiState = z.infer<typeof wifiStateSchema>;
 
@@ -78,10 +87,11 @@ export type WifiState = z.infer<typeof wifiStateSchema>;
 export const telemetryRequestSchema = z.object({
   device_id: deviceIdSchema,
   /** Contador em NVS, incrementado a cada boot. Detecta reinícios. */
-  boot_id: z.int().min(0),
+  boot_id: z.int().min(0).max(INT32_MAX),
   /** Monotônico dentro de um boot. É o que dá idempotência ao ingest. */
-  seq: z.int().min(0),
-  uptime_ms: z.int().min(0),
+  seq: z.int().min(0).max(INT32_MAX),
+  /** Vem de `millis()`: passa de `INT32_MAX` com ~25 dias de uptime. */
+  uptime_ms: z.int().min(0).max(UINT32_MAX),
   /** O que o RTC do dispositivo acha que é. Nulo se o módulo sumiu. */
   device_time: isoInstantSchema.nullable().optional(),
   fw_version: z.string().max(32).optional(),

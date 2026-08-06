@@ -85,7 +85,14 @@ static void _build_body(JsonDocument& doc, const DeviceSnapshot& s,
   }
   temp["available"] = s.temp_available;
   temp["valid"]     = s.temp_valid;
-  temp["age_ms"]    = s.temp_age_ms;
+  // `UINT32_MAX` e a sentinela de "nunca houve leitura valida", e ela nao pode
+  // viajar como numero: nao cabe num `integer` do PostgreSQL e derrubava o
+  // ingest com 500 a cada POST. Ausencia se representa com `null`.
+  if (s.temp_age_ms == UINT32_MAX) {
+    temp["age_ms"] = nullptr;
+  } else {
+    temp["age_ms"] = s.temp_age_ms;
+  }
 
   JsonObject fan = doc["fan"].to<JsonObject>();
   fan["on"]            = s.fan_on;

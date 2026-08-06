@@ -65,6 +65,41 @@ describe("telemetria: requisição", () => {
     assert.equal(r.temperature.celsius, null);
   });
 
+  it("aceita age_ms nulo — nunca houve leitura válida", () => {
+    const r = telemetryRequestSchema.parse({
+      ...post,
+      temperature: {
+        celsius: null,
+        available: false,
+        valid: false,
+        age_ms: null,
+      },
+    });
+    assert.equal(r.temperature.age_ms, null);
+  });
+
+  it("limita todo inteiro ao que a coluna aguenta", () => {
+    // Sem teto, um valor que o Zod aceita e o PostgreSQL recusa vira exceção
+    // no meio da transação e responde 500 — o dispositivo entende "o servidor
+    // quebrou" e reenvia para sempre. Com teto, a recusa é um 400 honesto.
+    const acimaDoUint32 = { ...post, uptime_ms: 4_294_967_296 };
+    assert.equal(telemetryRequestSchema.safeParse(acimaDoUint32).success, false);
+
+    const seqAcimaDoInt32 = { ...post, seq: 2_147_483_648 };
+    assert.equal(
+      telemetryRequestSchema.safeParse(seqAcimaDoInt32).success,
+      false,
+    );
+
+    // O uptime real de 25 dias precisa continuar passando: é uint32 legítimo,
+    // não um erro.
+    assert.equal(
+      telemetryRequestSchema.safeParse({ ...post, uptime_ms: 3_000_000_000 })
+        .success,
+      true,
+    );
+  });
+
   it("recusa device_id que não seja slug", () => {
     assert.equal(
       telemetryRequestSchema.safeParse({ ...post, device_id: "Aquario 01" })

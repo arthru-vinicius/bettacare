@@ -85,6 +85,23 @@ export const eventCodeSchema = z
     "código deve ter o formato 'componente.motivo'",
   );
 
+/**
+ * Tetos numéricos — o contrato precisa conhecer o limite do banco.
+ *
+ * Um valor que o Zod aceita e a coluna recusa vira exceção no meio da
+ * transação e **HTTP 500**: o dispositivo entende "o servidor quebrou" e
+ * reenvia para sempre, quando a resposta honesta seria 400, "seu corpo é
+ * inválido". Aconteceu de verdade — o firmware mandava `UINT32_MAX` como
+ * sentinela de `age_ms`, `z.int().min(0)` deixava passar, e a coluna `integer`
+ * estourava a cada POST.
+ *
+ * A regra que fica: todo inteiro do contrato declara um teto, e o teto é o da
+ * coluna que o recebe.
+ */
+export const INT32_MAX = 2_147_483_647;
+/** Tudo que vem de `millis()` ou de contador `uint32_t` no ESP32. */
+export const UINT32_MAX = 4_294_967_295;
+
 /** Identificador do dispositivo — slug estável, gravado no NVS. */
 export const deviceIdSchema = z
   .string()

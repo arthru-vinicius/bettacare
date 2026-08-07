@@ -25,6 +25,9 @@ node_modules
 
 docs
 tmp
+# Os masters da arte (3 MB) só servem ao gerador de ícones, rodado à mão. O que
+# a imagem precisa são os PNGs já gerados em apps/web/public/icons.
+apps/web/assets
 firmware
 
 *.log

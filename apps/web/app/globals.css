@@ -1126,3 +1126,68 @@ input[type="range"]:disabled::-webkit-slider-thumb {
     font-size: 2.3rem;
   }
 }
+
+/* ── Tela de abertura ──────────────────────────────────────────────────────
+ *
+ * Cobre o app inteiro enquanto o primeiro estado não chega. A arte aqui é a
+ * fotorrealista, que só existe neste momento — o ícone instalado no aparelho
+ * é a ilustração vetorial.
+ */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: var(--c-bg);
+  /* O brilho da arte sangra para fora dela; um radial por baixo faz a emenda
+     com o fundo desaparecer em vez de virar uma borda visível. */
+  background-image: radial-gradient(
+    circle at 50% 42%,
+    rgba(118, 66, 200, 0.22),
+    transparent 62%
+  );
+  padding: 24px;
+}
+
+.splash-arte {
+  width: min(58vw, 232px);
+  height: auto;
+  animation: splash-respira 2.6s ease-in-out infinite;
+}
+
+.splash-nome {
+  font-size: 1.32rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--c-text-1);
+  margin-top: 10px;
+}
+
+.splash-dica {
+  font-size: 0.82rem;
+  color: var(--c-text-2);
+}
+
+@keyframes splash-respira {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.94;
+  }
+  50% {
+    transform: scale(1.035);
+    opacity: 1;
+  }
+}
+
+/* Movimento sutil ainda é movimento: quem pediu para reduzir não deve vê-lo. */
+@media (prefers-reduced-motion: reduce) {
+  .splash-arte {
+    animation: none;
+  }
+}

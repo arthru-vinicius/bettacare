@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { Carregando } from "@/components/Carregando";
 import { IconBulb, IconChart, IconFan, IconHome, IconRefresh } from "@/components/icons";
 import { Fan } from "@/components/screens/Fan";
 import { Health } from "@/components/screens/Health";
@@ -34,6 +35,11 @@ export default function Page() {
   const grave = data?.overall === "critical" || data?.overall === "offline";
   const atencao = data?.overall === "attention";
 
+  // Só na primeira carga. Uma atualização de polling não pode jogar a tela de
+  // abertura por cima de quem está no meio de alguma coisa — para isso existe
+  // o `refreshing`, que anima só o botão.
+  if (loading) return <Carregando />;
+
   return (
     <div className="app">
       {update.available ? (
@@ -51,11 +57,11 @@ export default function Page() {
         A ordem importa: se não há contato com o servidor, nada se sabe sobre o
         aquário, então essa mensagem vem primeiro e as outras nem aparecem.
       */}
-      {error !== null && !loading ? (
+      {error !== null ? (
         <div className="banner offline">
           <span>Sem contato com o servidor</span>
         </div>
-      ) : deviceMissing && !loading ? (
+      ) : deviceMissing ? (
         <div className="banner update">
           <span>Aguardando o primeiro contato do aquário</span>
         </div>

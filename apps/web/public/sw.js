@@ -19,7 +19,13 @@ const CACHE = `bettacare-${BUILD_ID}`;
  * corrente e o segundo é justamente o que detecta uma versão nova — servir
  * qualquer um dos dois do cache anularia o mecanismo.
  */
-const SHELL = ["/", "/manifest.webmanifest"];
+const SHELL = [
+  "/",
+  "/manifest.webmanifest",
+  // A arte da tela de abertura entra no casco: ela é a primeira coisa que o
+  // usuário vê, e buscá-la da rede na abertura anularia o ganho de ter cache.
+  "/icons/splash-512.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

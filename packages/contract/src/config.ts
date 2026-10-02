@@ -26,6 +26,15 @@ export const deviceConfigSchema = z
     message:
       "fan_off_c precisa ser menor que fan_trigger_c — sem essa folga a ventoinha oscilaria sem parar",
     path: ["fan_off_c"],
+  })
+  /**
+   * Horários iguais não são "nunca acende": o firmware lê a janela como cruzando
+   * a meia-noite (`on <= agora || agora < off`), que com os dois iguais é
+   * verdade o dia inteiro — a luz ficaria acesa para sempre.
+   */
+  .refine((c) => c.light_on_time !== c.light_off_time, {
+    message: "o horário de acender precisa ser diferente do de apagar",
+    path: ["light_off_time"],
   });
 
 export type DeviceConfig = z.infer<typeof deviceConfigSchema>;

@@ -6,10 +6,23 @@ import { componentHealthSchema, overallStatusSchema } from "./health.js";
 import {
   componentSchema,
   eventCodeSchema,
+  healthStatusSchema,
   isoInstantSchema,
   severitySchema,
   timeOfDaySchema,
 } from "./primitives.js";
+import { diagnosticCheckSchema, feederStateSchema } from "./telemetry.js";
+
+/** Relatório de autodiagnóstico já persistido, como a interface o recebe. */
+export const diagnosticResultSchema = z.object({
+  ran_at: isoInstantSchema,
+  command_id: z.int().nullable(),
+  duration_ms: z.int(),
+  /** Pior status entre os checks — o veredito de uma linha só. */
+  overall: healthStatusSchema,
+  checks: z.array(diagnosticCheckSchema),
+});
+export type DiagnosticResult = z.infer<typeof diagnosticResultSchema>;
 
 /**
  * A superfície que o navegador consome.
@@ -60,12 +73,48 @@ export const overviewResponseSchema = z.object({
         ip: z.string().nullable(),
         reconnects: z.number(),
       }),
+      /**
+       * Nulo até o primeiro POST que já mencione o alimentador. Diferente de
+       * `feeder.connected === false`: nulo é "nunca ouvi falar desse módulo",
+       * falso é "conheço o módulo e ele não está respondendo agora" — a
+       * distinção é o que deixa a tela do alimentador escolher entre "isto
+       * não existe ainda" e "isto existe e está desconectado".
+       */
+      feeder: feederStateSchema.nullable(),
       uptime_ms: z.number().nullable(),
       updated_at: isoInstantSchema,
+      /**
+       * Versão da configuração que o **dispositivo** diz estar usando. Igual ao
+       * `config_version` da raiz quando a última mudança feita no app já chegou
+       * ao aquário — é o que deixa a interface dizer "aplicado", e não só
+       * "salvo no servidor".
+       */
+      config_version: z.int(),
+      /**
+       * Diagnóstico do **controlador**, não do aquário — acrescentado na
+       * rodada de confiabilidade de 2026-08-21 (UPGRADE/06). Responde "o
+       * ESP32 reiniciou esta noite, e por quê?" e "a memória está caindo?",
+       * perguntas que o resto de `state` não tinha como responder.
+       */
+      controller: z
+        .object({
+          reset_reason: z.string().nullable(),
+          free_heap: z.number().nullable(),
+          min_free_heap: z.number().nullable(),
+          max_alloc_heap: z.number().nullable(),
+          post_latency_ms: z.number().nullable(),
+          api_failures: z.number(),
+          nvs_failures: z.number(),
+          ota_last_result: z.string(),
+          events_dropped: z.number(),
+        })
+        .nullable(),
     })
     .nullable(),
   config: deviceConfigSchema.nullable(),
   config_version: z.int(),
+  /** Último autodiagnóstico executado. Nulo se nunca rodou. */
+  diagnostic: diagnosticResultSchema.nullable(),
 });
 export type OverviewResponse = z.infer<typeof overviewResponseSchema>;
 
@@ -144,3 +193,30 @@ export const commandAcceptedSchema = z.object({
   id: z.int(),
   status: z.literal("queued"),
 });
+
+// ── Notificações push ───────────────────────────────────────────────────────
+
+/**
+ * Inscrição de Web Push, no formato que `PushSubscription.toJSON()` produz.
+ *
+ * Validado no servidor porque vem do navegador: um `endpoint` malformado só
+ * seria descoberto na hora de enviar o alerta — ou seja, exatamente quando
+ * não dá para consertar.
+ */
+export const pushSubscriptionSchema = z.object({
+  endpoint: z.url().max(512),
+  keys: z.object({
+    p256dh: z.string().min(1).max(256),
+    auth: z.string().min(1).max(256),
+  }),
+});
+export type PushSubscriptionInput = z.infer<typeof pushSubscriptionSchema>;
+
+/** Corpo que o service worker recebe no evento `push`. */
+export const pushPayloadSchema = z.object({
+  title: z.string().max(80),
+  body: z.string().max(240),
+  tag: z.string().max(40),
+  requireInteraction: z.boolean().optional(),
+});
+export type PushPayload = z.infer<typeof pushPayloadSchema>;

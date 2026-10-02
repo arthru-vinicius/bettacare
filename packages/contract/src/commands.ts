@@ -29,6 +29,48 @@ export const commandActionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("device.reboot"),
   }),
+  z.object({
+    /**
+     * Pede um autodiagnóstico: o firmware sonda ativamente cada periférico e
+     * devolve o relatório no POST seguinte (ver `diagnosticReportSchema`).
+     *
+     * Não altera estado nenhum do aquário — só lê barramentos e faz uma
+     * escrita de teste numa chave própria da NVS. Foi desenhado assim de
+     * propósito: um diagnóstico que mexe nos atuadores é um diagnóstico que
+     * ninguém roda com o aquário povoado.
+     */
+    action: z.literal("device.diagnose"),
+  }),
+  z.object({
+    /**
+     * Alimenta agora, fora da agenda. O módulo do alimentador (quando
+     * conectado) confirma via UART e o resultado real — grãos pedidos ×
+     * confirmados — chega num POST seguinte, no bloco `feeder` da telemetria,
+     * não neste `ack`. O `ack` aqui só diz "o ESP32 repassou o pedido pro
+     * módulo", o mesmo desenho de `device.diagnose`.
+     */
+    action: z.literal("feeder.feed_now"),
+    /** Grãos a dispensar; omitido usa o valor configurado no módulo. */
+    grains: z.int().min(1).max(20).optional(),
+  }),
+  z.object({
+    /**
+     * Substitui a agenda inteira do alimentador — nunca um campo isolado.
+     * `feeder.feed_now` e `feeder.set_config` compartilham o alvo `"feeder"`
+     * de propósito (mesmo padrão de `device.reboot`/`device.diagnose`): as
+     * duas ações são raras o bastante para aceitar o mesmo trade-off de
+     * `superseded` que já existe ali.
+     *
+     * A NVS do módulo continua sendo a fonte de verdade — isto é só o caminho
+     * de escrita quando a edição vem do app. O módulo confirma aplicando e
+     * devolvendo o novo estado no `feeder` da telemetria seguinte.
+     */
+    action: z.literal("feeder.set_config"),
+    hour1: z.int().min(0).max(23),
+    hour2: z.int().min(0).max(23),
+    grains_per_feeding: z.int().min(1).max(20),
+    auto_enabled: z.boolean(),
+  }),
 ]);
 export type CommandAction = z.infer<typeof commandActionSchema>;
 
@@ -38,6 +80,9 @@ export const COMMAND_ACTION_NAMES = [
   "fan.set_mode",
   "config.apply",
   "device.reboot",
+  "device.diagnose",
+  "feeder.feed_now",
+  "feeder.set_config",
 ] as const;
 
 /**
@@ -50,6 +95,7 @@ export const commandTargetSchema = z.enum([
   "fan",
   "config",
   "device",
+  "feeder",
 ]);
 export type CommandTarget = z.infer<typeof commandTargetSchema>;
 
@@ -63,7 +109,11 @@ export function targetOf(action: CommandAction): CommandTarget {
     case "config.apply":
       return "config";
     case "device.reboot":
+    case "device.diagnose":
       return "device";
+    case "feeder.feed_now":
+    case "feeder.set_config":
+      return "feeder";
   }
 }
 

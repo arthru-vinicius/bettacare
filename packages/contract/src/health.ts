@@ -80,6 +80,7 @@ export const COMPONENT_LABELS: Record<z.infer<typeof componentSchema>, string> =
   light: "Luminária",
   button: "Botão físico",
   pot: "Potenciômetro",
+  feeder: "Alimentador",
   nvs: "Memória de configuração",
   ota: "Atualização remota",
 };

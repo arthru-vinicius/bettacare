@@ -18,6 +18,11 @@ export const COMPONENTS = [
   "light",
   "button",
   "pot",
+  // módulo opcional de alimentação — fora de AQUARIUM_COMPONENTS de propósito,
+  // ver o comentário em `evaluateHealth` (health/evaluate.ts): desconectado é
+  // estado normal deste módulo, não falha, e não deve influenciar o veredito
+  // geral do aquário.
+  "feeder",
   // armazenamento e manutenção do próprio dispositivo
   "nvs",
   "ota",
@@ -26,13 +31,21 @@ export const COMPONENTS = [
 export const componentSchema = z.enum(COMPONENTS);
 export type Component = z.infer<typeof componentSchema>;
 
-/** Só estes aparecem na aba Saúde; os demais são diagnóstico de bastidor. */
+/**
+ * Só estes aparecem na aba Saúde; os demais são diagnóstico de bastidor.
+ *
+ * `button` e `pot` entraram na rodada de confiabilidade de 2026-08-21: são
+ * entradas físicas que também falham, e um potenciômetro com mau contato era
+ * exatamente o exemplo citado como "hoje invisível" — ver UPGRADE/04 (S2).
+ */
 export const AQUARIUM_COMPONENTS = [
   "temp",
   "fan",
   "light",
   "rtc",
   "wifi",
+  "button",
+  "pot",
 ] as const satisfies readonly Component[];
 
 export const SEVERITIES = ["debug", "info", "warn", "error", "fatal"] as const;

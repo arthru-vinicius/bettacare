@@ -6,6 +6,7 @@ import {
   describeEventCode,
   deviceConfigSchema,
   pendingCommandSchema,
+  sanitizeTelemetryRequest,
   summarizeHealth,
   targetOf,
   telemetryRequestSchema,
@@ -106,6 +107,90 @@ describe("telemetria: requisição", () => {
         .success,
       false,
     );
+  });
+});
+
+describe("saneamento de telemetria (UPGRADE/05, C1)", () => {
+  it("grampeia rpm fora de faixa em vez de rejeitar o corpo inteiro", () => {
+    // O caminho de falha documentado: ruído no tacômetro sem pull-up produz
+    // uma contagem que passa de 20000 rpm — fisicamente impossível.
+    const r = sanitizeTelemetryRequest({ ...post, fan: { ...post.fan, rpm: 99_999 } });
+    assert.notEqual(r.data, null);
+    assert.equal(r.data?.fan.rpm, 20_000);
+    assert.equal(r.corrections.length, 1);
+    assert.equal(r.corrections[0]?.path, "fan.rpm");
+  });
+
+  it("grampeia rssi fora de faixa", () => {
+    const r = sanitizeTelemetryRequest({ ...post, wifi: { ...post.wifi, rssi: 50 } });
+    assert.equal(r.data?.wifi.rssi, 0);
+  });
+
+  it("um corpo válido passa direto, sem correção nenhuma", () => {
+    const r = sanitizeTelemetryRequest(post);
+    assert.equal(r.corrections.length, 0);
+    assert.notEqual(r.data, null);
+  });
+
+  it("nunca corrige o núcleo — device_id, boot_id e seq inválidos continuam rejeitando tudo", () => {
+    const r = sanitizeTelemetryRequest({ ...post, device_id: "Aquario Invalido" });
+    assert.equal(r.data, null);
+  });
+
+  it("um corpo estruturalmente quebrado continua null mesmo depois de tentar corrigir", () => {
+    const r = sanitizeTelemetryRequest({ device_id: "x", boot_id: 1, seq: 1 });
+    assert.equal(r.data, null);
+    assert.ok(r.problems.length > 0, "o motivo da recusa precisa sair para o log");
+  });
+
+  it("evento com componente desconhecido sai sozinho, sem derrubar o corpo (UPGRADE/07)", () => {
+    // O caso real de produção: firmware mais novo mandando `comp: "feeder"` para
+    // um servidor que ainda não conhecia o alimentador — 136 POSTs perdidos.
+    const r = sanitizeTelemetryRequest({
+      ...post,
+      events: [
+        { sev: "info", comp: "light", code: "light.on", msg: "acesa" },
+        { sev: "info", comp: "periferico_novo", code: "periferico_novo.x", msg: "?" },
+        { sev: "warn", comp: "fan", code: "fan.failsafe", msg: "segurança" },
+      ],
+    });
+    assert.notEqual(r.data, null);
+    assert.deepEqual(
+      r.data?.events.map((e) => e.code),
+      ["light.on", "fan.failsafe"],
+    );
+    assert.equal(r.corrections.length, 1);
+    assert.equal(r.corrections[0]?.path, "events.1");
+    assert.equal(r.corrections[0]?.action, "dropped");
+    assert.ok(String(r.corrections[0]?.received).includes("periferico_novo"));
+  });
+
+  it("vários problemas no mesmo evento descartam o evento uma vez só", () => {
+    const r = sanitizeTelemetryRequest({
+      ...post,
+      events: [{ sev: "barulho", comp: "nada", code: "x", msg: "y" }],
+    });
+    assert.notEqual(r.data, null);
+    assert.equal(r.data?.events.length, 0);
+    assert.equal(r.corrections.length, 1);
+  });
+
+  it("hora do RTC impossível vira null e o valor recebido vai para o log", () => {
+    const r = sanitizeTelemetryRequest({ ...post, rtc: { ...post.rtc, time: "40:08" } });
+    assert.equal(r.data?.rtc.time, null);
+    assert.equal(r.corrections[0]?.action, "nulled");
+    assert.equal(r.corrections[0]?.received, "40:08");
+  });
+});
+
+describe("configuração", () => {
+  it("recusa horários de acender e apagar iguais — a luz ficaria acesa para sempre", () => {
+    const r = deviceConfigSchema.safeParse({
+      ...DEFAULT_CONFIG,
+      light_on_time: "08:00",
+      light_off_time: "08:00",
+    });
+    assert.equal(r.success, false);
   });
 });
 

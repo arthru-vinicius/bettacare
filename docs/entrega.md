@@ -110,9 +110,17 @@ Com a imagem final rodando contra Postgres 17:
   no `docker compose down`;
 - uid `1000`, migrations e export do PWA presentes na imagem.
 
+## Verificado em produção (2026-10-02)
+
+- o push para o `ghcr.io` pela CI: v1.1.0, v1.1.1 e v1.1.2, cada uma com CI e
+  Release verdes e a imagem conferida por dentro;
+- o deploy pelo `homelab update`, com as migrations aplicadas numa transação
+  e conferidas pelo `homelab-c4` contra o banco;
+- o app atrás do Cloudflare Tunnel e do Access: é assim que ele é usado, e a
+  mudança de configuração de 2026-10-02 ficou registrada com o e-mail que
+  chegou no cabeçalho do Access.
+
 ## Não verificado
 
-- o push para o `ghcr.io` em si (exige rodar na CI, com o token do GitHub);
-- o comportamento atrás do Cloudflare Tunnel e do Access;
 - restart do container após reboot do servidor com o Postgres ainda subindo —
   o backoff foi exercitado só em desenvolvimento.

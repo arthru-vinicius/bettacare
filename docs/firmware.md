@@ -279,8 +279,9 @@ Na bancada, `/status` mostra `feeder.present`: falso com o conector vazio.
   verdade;
 - o cenário "servidor fora do ar por dois dias", que é o que valida o NVS como
   cache offline de verdade;
-- a série de heap ao longo de dias (a aba Relatórios responde: maior bloco
-  livre caindo junto com o livre é fragmentação);
+- a série de heap ao longo de dias: a planilha de medições (Registros) traz a
+  memória livre; o maior bloco alocável fica em `telemetry.max_alloc_heap`.
+  Maior bloco caindo junto com o livre é fragmentação;
 - o enlace com o módulo do alimentador, cujo firmware ainda não existe — o lado
   do ESP32 principal só foi exercitado por teste de host.
 

@@ -174,10 +174,14 @@ simulado obedecendo aos comandos como o firmware:
 - atualização a 1 s escolhida na Saúde: aplicada, 10 POSTs em 10 s, nenhum
   alarme falso.
 
+## Verificado em produção (2026-10-02)
+
+- atrás do Cloudflare Access: é como o app é usado, e a mudança de
+  configuração ficou registrada com o e-mail do cabeçalho
+  `Cf-Access-Authenticated-User-Email`.
+
 ## Não verificado
 
 - instalação como PWA no iOS e no Android (a heurística de instalabilidade
   depende do navegador real, não do headless);
-- comportamento atrás do Cloudflare Access — em desenvolvimento não há o header
-  `Cf-Access-Authenticated-User-Email`, e o servidor aceita a ausência;
 - a tela em aparelhos estreitos de verdade; foi conferida em 390×844.

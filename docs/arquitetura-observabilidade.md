@@ -326,25 +326,29 @@ em código.
 
 ## 7. A interface
 
-Quatro abas na barra inferior, como hoje. Diagnóstico é a quarta e concentra
-tudo que é "olhar para trás":
+Cinco abas na barra inferior. Diagnóstico é a última e concentra tudo que é
+"olhar para trás" (estrutura de 2026-10-02; o desenho original separava Logs e
+Relatórios):
 
 ```
-Início · Luminária · Ventoinha · Diagnóstico
-                                    └── Saúde · Logs · Relatórios
+Início · Luminária · Ventoinha · Alimentador · Diagnóstico
+                                                 └── Saúde · Registros
 ```
 
 **Saúde** — lista dos componentes com pill de estado, valor corrente e "desde
 HH:MM". Tocar abre o detalhe: histórico de transições daquele componente e os
 eventos que ele gerou.
 
-**Logs** — chips de severidade (Tudo / Erros / Avisos / Info), seletor de
-componente e busca por texto. Lista paginada por cursor, horário convertido para
-`TZ_DISPLAY`. Origem `device` e `server` marcadas visualmente.
+**Registros** — juntou os antigos Logs e Relatórios: período, nível, filtros
+por componente e texto, dias agrupados, detalhes expansíveis, horário em
+`TZ_DISPLAY`, origem `device` e `server` marcadas. Daqui saem as planilhas
+(eventos e medições, CSV para o Excel em português).
 
-**Relatórios** — curva de temperatura, horas de luz por dia, tempo de ventoinha
-ligada. Alimentado por `telemetry_hourly`, então continua funcionando em cima de
-períodos cuja telemetria bruta já foi purgada.
+**Histórico de temperatura** — mora na tela da Ventoinha, onde a pergunta
+"como andou a água?" nasce: curva de 24 h, 7 ou 30 dias, mais luz acesa e
+ventoinha ligada por dia. Alimentado por `telemetry_hourly`, então continua
+funcionando sobre períodos cuja telemetria bruta já foi purgada, e só agrega a
+faixa habitual da água (16–33 °C) — o que sai dela é aviso nos Registros.
 
 O desenho visual é o do app antigo, portado: paleta escura (`#070d1a` de fundo,
 `#4cc3f7` de acento, âmbar para luz, verde-água para ventoinha), cards com borda

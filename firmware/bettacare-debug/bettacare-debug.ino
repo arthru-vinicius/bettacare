@@ -234,7 +234,7 @@ void loop() {
   temperature_update();    // conversão não-bloqueante do DS18B20
   fan_update();            // pot, histerese, cooldown, tacômetro
   rtc_check_automation();  // age só na transição de período
-  feeder_link_update();    // drena o UART2, PING periódico, detecta timeout
+  feeder_link_update();    // presença no fio, UART2, PING só com o módulo presente
 
   _publish_snapshot();
 

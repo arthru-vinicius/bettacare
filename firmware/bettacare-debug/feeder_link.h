@@ -19,15 +19,26 @@
  * o estado daqui de forma síncrona, no mesmo núcleo, antes de publicar no
  * `app_state` — é o `app_state` que cruza para o núcleo de rede.
  *
+ * **Presença física antes de qualquer conversa.** O RX (GPIO16) tem pull-down:
+ * conector vazio é nível baixo permanente, e um módulo ligado o mantém em alto
+ * — o repouso de qualquer UART. Sem módulo no fio, o principal não manda nem
+ * `PING`, e o POST não leva bloco `feeder`. Do lado do módulo, isso exige o TX
+ * dele ligado ao fio por no máximo ~2,2 kΩ em série (ver
+ * `pinagem-alimentador-modulo.md`): mais que isso, o pull-down interno de
+ * ~45 kΩ puxa o nível alto para perto do limiar.
+ *
  * Protocolo, uma linha ASCII por mensagem, terminada em `\n`:
  *
- *   ESP32 → módulo   PING
+ *   ESP32 → módulo   PING                 a cada 2 s, só com o módulo presente
  *                     FEED [grãos]        grãos omitido = padrão do módulo
  *                     CFG <h1> <h2> <grãos> <0|1>
  *
  *   módulo → ESP32   PONG <h1> <h2> <grãos> <auto> <idade_s> <req> <conf> <ok>
  *                     SCHEDULE <h1> <h2> <grãos> <auto>   — empurrado sozinho a cada reconexão
  *                     FED <req> <conf> <ok>                — resultado de uma alimentação
+ *
+ * `FEED` e `CFG` só saem com o módulo conectado (`connected`, linha válida nos
+ * últimos 6 s) — quem decide é o `loop()`, que recusa o comando caso contrário.
  */
 
 struct FeederLinkState {
@@ -45,8 +56,14 @@ struct FeederLinkState {
 
 void feeder_link_init();
 
-/** Chamado a cada ciclo do loop: drena o UART, manda PING periódico, detecta timeout. */
+/**
+ * Chamado a cada ciclo do loop: amostra a presença no fio, drena o UART, manda
+ * o PING periódico (só com o módulo presente) e detecta a desconexão.
+ */
 void feeder_link_update();
+
+/** O módulo está fisicamente no fio (RX em nível alto)? Seguro de qualquer núcleo. */
+bool feeder_link_present();
 
 /** Pede uma alimentação manual. `grains == 0` usa o padrão configurado no módulo. */
 void feeder_link_request_feed(uint8_t grains);

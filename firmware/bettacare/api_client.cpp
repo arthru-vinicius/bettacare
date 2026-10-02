@@ -164,25 +164,37 @@ static void _build_body(JsonDocument& doc, const DeviceSnapshot& s,
   wifi["reconnects"] = s.wifi_reconnects;
 
   /**
-   * Módulo opcional de alimentação — sempre presente a partir deste
-   * firmware, `connected` é que diz se é agora ou "última vez que soube".
-   * `false` é o estado normal quando o módulo não fica ligado o tempo todo
-   * (ver `feeder_link.h`), nunca uma falha por si só.
+   * Módulo opcional de alimentação: o bloco só vai com ele conectado — linha
+   * válida pelo fio nos últimos 6 s, ver `feeder_link.h`. Sem o bloco, o
+   * servidor entende "desconectado" e guarda a última agenda conhecida;
+   * desconectado é o estado normal de um módulo que não fica ligado o tempo
+   * todo, nunca uma falha.
+   *
+   * Até a 2.0.0 o bloco ia inteiro em todo POST, zerado quando o módulo nunca
+   * tinha respondido: `grains_per_feeding: 0` fica abaixo do mínimo e virava
+   * um evento `ingest.field_rejected` por POST em produção, e a agenda 00h/00h
+   * aparecia no app para um módulo que nunca existiu.
    */
-  JsonObject feeder = doc["feeder"].to<JsonObject>();
-  feeder["connected"]          = s.feeder_connected;
-  feeder["auto_enabled"]       = s.feeder_auto_enabled;
-  feeder["hour1"]              = s.feeder_hour1;
-  feeder["hour2"]              = s.feeder_hour2;
-  feeder["grains_per_feeding"] = s.feeder_grains_per_feeding;
-  if (s.feeder_last_feed_age_s == UINT32_MAX) {
-    feeder["last_feed_age_s"] = nullptr;
-  } else {
-    feeder["last_feed_age_s"] = s.feeder_last_feed_age_s;
+  if (s.feeder_connected) {
+    JsonObject feeder = doc["feeder"].to<JsonObject>();
+    feeder["connected"] = true;
+    // A agenda, só depois do primeiro PONG/SCHEDULE válido. `connected` vira
+    // verdadeiro com qualquer linha reconhecida, até antes disso, e uma agenda
+    // de verdade nunca tem 0 grãos (`_parse_schedule` exige 1 a 20).
+    if (s.feeder_grains_per_feeding > 0) {
+      feeder["auto_enabled"]       = s.feeder_auto_enabled;
+      feeder["hour1"]              = s.feeder_hour1;
+      feeder["hour2"]              = s.feeder_hour2;
+      feeder["grains_per_feeding"] = s.feeder_grains_per_feeding;
+    }
+    // A última alimentação, só se houve uma (`UINT32_MAX` é "nunca alimentou").
+    if (s.feeder_last_feed_age_s != UINT32_MAX) {
+      feeder["last_feed_age_s"]     = s.feeder_last_feed_age_s;
+      feeder["last_feed_requested"] = s.feeder_last_feed_requested;
+      feeder["last_feed_confirmed"] = s.feeder_last_feed_confirmed;
+      feeder["last_feed_ok"]        = s.feeder_last_feed_ok;
+    }
   }
-  feeder["last_feed_requested"] = s.feeder_last_feed_requested;
-  feeder["last_feed_confirmed"] = s.feeder_last_feed_confirmed;
-  feeder["last_feed_ok"]        = s.feeder_last_feed_ok;
 
   if (n_acks > 0) {
     JsonArray arr = doc["ack"].to<JsonArray>();

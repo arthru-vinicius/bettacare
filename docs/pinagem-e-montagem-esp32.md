@@ -66,7 +66,7 @@ correta e não deve ser alterada.**
 | GPIO | Função | Observação |
 |---|---|---|
 | 4 | `TXD2` — para o módulo alimentador | UART2 a 9600 baud; envia `PING`, `FEED [grãos]` e `CFG <h1> <h2> <grãos> <auto>` |
-| 16 | `RXD2` — do módulo alimentador | UART2, com o pull-up interno ligado pelo firmware; recebe `PONG`, `SCHEDULE` e `FED` |
+| 16 | `RXD2` — do módulo alimentador | UART2, com o **pull-down** interno ligado pelo firmware: o nível do fio diz se o módulo está ligado. Recebe `PONG`, `SCHEDULE` e `FED` |
 
 ---
 
@@ -577,13 +577,18 @@ Os `GPIO4`/`GPIO5` da última coluna são do ESP32-C3 — chip diferente do
 - **Sem o cabo conectado, o alimentador continua funcionando sozinho** (RTC e
   agenda próprios) — a integração só existe pra centralizar agenda, health-check
   e histórico no servidor/PWA. Desse lado já está tudo pronto: o enlace no
-  firmware do ESP32 principal, o servidor e o app. Sem o módulo, o ESP32 manda
-  um `PING` a cada 2 s e simplesmente reporta "desconectado", que é o estado
-  normal.
+  firmware do ESP32 principal, o servidor e o app.
+- **O ESP32 detecta o módulo pelo próprio fio de dados**, sem fio a mais no
+  conector (firmware 2.0.1). O `GPIO16` tem pull-down interno. Conector vazio
+  é nível baixo; módulo ligado é nível alto, o repouso da UART dele. Sem módulo
+  no fio, o ESP32 não manda nem `PING`, e o POST não leva o bloco do
+  alimentador. Por isso **não ponha pull-up externo no `GPIO16`**, e, do lado
+  do módulo, o resistor em série no TX dele fica em até 2,2 kΩ (ver
+  [`pinagem-alimentador-modulo.md`](./pinagem-alimentador-modulo.md)).
 - O enlace não tem checksum, e o `GPIO16` corre ao lado do PWM de 25 kHz no
-  `GPIO17`. Por isso o firmware liga o pull-up interno no RX (com o conector
-  vazio, o fio vira antena) e descarta qualquer linha com campo fora da faixa
-  do contrato — o próximo `PONG`, 2 s depois, traz o valor certo.
+  `GPIO17`. O pull-down também segura o fio vazio quieto (sem ele, vira
+  antena), e o firmware descarta qualquer linha com campo fora da faixa do
+  contrato — o próximo `PONG`, 2 s depois, traz o valor certo.
 
 ---
 

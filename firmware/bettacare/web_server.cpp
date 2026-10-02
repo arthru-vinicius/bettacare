@@ -5,6 +5,7 @@
 #include "device_config.h"
 #include "event_log.h"
 #include "fan.h"
+#include "feeder_link.h"
 #include "light.h"
 #include "rtc_manager.h"
 #include "temperature.h"
@@ -249,6 +250,14 @@ static String _build_json() {
   DeviceConfig cfg_atual = device_config_snapshot();
   cfg_obj["trigger_c"]  = serialized(String(cfg_atual.fan_trigger_c, 1));
   cfg_obj["off_c"]      = serialized(String(cfg_atual.fan_off_c, 1));
+
+  // Bancada: com o conector vazio, `present` precisa ser falso — é o que
+  // prova que o pull-down segura o fio e que nenhum PING está saindo.
+  DeviceSnapshot snap;
+  bool tem_snapshot       = app_state_snapshot(snap);
+  JsonObject feeder_obj   = doc["feeder"].to<JsonObject>();
+  feeder_obj["present"]   = feeder_link_present();
+  feeder_obj["connected"] = tem_snapshot && snap.feeder_connected;
 
   JsonObject srv_obj        = doc["server"].to<JsonObject>();
   srv_obj["failures"]       = api_client_consecutive_failures();

@@ -9,10 +9,22 @@
 
 /** Sem nenhuma linha reconhecida por este tempo, o módulo conta como desconectado. */
 static const uint32_t LINK_TIMEOUT_MS = 6000;
-/** Intervalo entre PINGs quando não há nada mais para mandar. */
+/** Intervalo entre PINGs, com o módulo presente no fio. */
 static const uint32_t PING_INTERVAL_MS = 2000;
 /** Linha maior que isto nunca deveria acontecer com este protocolo — descartada. */
 static const uint8_t LINE_BUF_LEN = 96;
+
+/**
+ * Amostras seguidas (uma por ciclo do loop, ~200 ms) para mudar a presença.
+ *
+ * Ausente: cinco amostras em nível baixo, ~1 s. Com o módulo ligado, o fio só
+ * desce durante os bits de um byte — ~104 µs cada a 9600 baud, numa linha de
+ * ~25 ms a cada 2 s —, e cinco amostras de ciclos diferentes nunca caem todas
+ * dentro de bits.
+ * Presente: duas em nível alto, para um pico de ruído isolado não bastar.
+ */
+static const uint8_t ABSENT_SAMPLES  = 5;
+static const uint8_t PRESENT_SAMPLES = 2;
 
 static FeederLinkState _state = {};
 /** Evita emitir "desconectou" no boot, quando o módulo nunca chegou a responder. */
@@ -22,23 +34,52 @@ static uint32_t _last_ping_ms = 0;
 /** `millis()` de quando `_state.last_feed_age_s` foi medido pela última vez. */
 static uint32_t _last_feed_measured_ms = 0;
 
+/**
+ * O módulo está fisicamente no fio? Lido também pelo `/status` local, de outro
+ * núcleo — um `bool` é lido e escrito numa instrução.
+ */
+static volatile bool _present = false;
+static uint8_t       _high_samples = 0;
+static uint8_t       _low_samples = 0;
+
 static char    _line_buf[LINE_BUF_LEN];
 static uint8_t _line_len = 0;
 
 void feeder_link_init() {
   Serial2.begin(FEEDER_LINK_BAUD, SERIAL_8N1, PIN_FEEDER_RX, PIN_FEEDER_TX);
-  // O core não liga pull-up no RX do UART. Com o conector do módulo vazio, o
-  // GPIO16 flutua e o fio vira antena — bytes de ruído. Repouso do UART é
-  // nível alto, então o pull-up interno só fixa a linha no estado ocioso
-  // (UPGRADE/07). `gpio_pullup_en` e não `pinMode`: este não tira o pino do UART.
-  gpio_pullup_en((gpio_num_t)PIN_FEEDER_RX);
+  /**
+   * Detecção física do módulo pelo próprio fio de dados, sem fio a mais no
+   * conector. A UART repousa em nível alto: com o módulo ligado, o GPIO16
+   * fica em alto; com o conector vazio, o pull-down o segura em baixo. Sem
+   * módulo no fio, o principal não manda nada por ele (v1.1.1).
+   *
+   * Até a 2.0.0 era pull-up: segurava o fio vazio quieto (ele vira antena ao
+   * lado do PWM do GPIO17), mas no mesmo nível de um módulo ocioso — e o PING
+   * saía a cada 2 s para ninguém. O pull-down faz as duas coisas.
+   * `gpio_*` e não `pinMode`: este tiraria o pino do UART.
+   */
+  gpio_pullup_dis((gpio_num_t)PIN_FEEDER_RX);
+  gpio_pulldown_en((gpio_num_t)PIN_FEEDER_RX);
   _state = {};
   _state.last_feed_age_s = UINT32_MAX;
   _ever_connected = false;
   _last_rx_ms = 0;
   _last_ping_ms = 0;
   _last_feed_measured_ms = 0;
+  _present = false;
+  _high_samples = 0;
+  _low_samples = 0;
   _line_len = 0;
+}
+
+static void _sample_presence() {
+  if (gpio_get_level((gpio_num_t)PIN_FEEDER_RX)) {
+    _low_samples = 0;
+    if (!_present && ++_high_samples >= PRESENT_SAMPLES) _present = true;
+  } else {
+    _high_samples = 0;
+    if (_present && ++_low_samples >= ABSENT_SAMPLES) _present = false;
+  }
 }
 
 /**
@@ -60,6 +101,9 @@ static bool _next_token(char*& p, char* out, uint8_t out_len) {
 
 static void _mark_connected() {
   _last_rx_ms = millis();
+  // Quem mandou linha válida está no fio, mesmo antes das duas amostras.
+  _present = true;
+  _low_samples = 0;
   if (_state.connected) return;
   _state.connected = true;
   // Só registra "conectou" se antes já tinha desconectado (ou é a primeira
@@ -219,8 +263,14 @@ static void _handle_line(char* line) {
 void feeder_link_update() {
   if (!dbg_feeder_enabled) return;
 
+  _sample_presence();
+
   while (Serial2.available()) {
     char c = (char)Serial2.read();
+    // O 0x00 que a UART entrega quando o fio desce e fica em baixo (o
+    // "break" de desplugar o cabo) não é texto; no começo de uma linha, faria
+    // o `PONG` seguinte ser descartado.
+    if (c == '\0') continue;
     if (c == '\n' || c == '\r') {
       if (_line_len > 0) {
         _line_buf[_line_len] = '\0';
@@ -237,20 +287,25 @@ void feeder_link_update() {
 
   uint32_t agora = millis();
 
-  // Timeout: o estado NORMAL quando o módulo não fica ligado o tempo todo —
-  // nunca gera evento de severidade acima de `info`.
-  if (_state.connected && (agora - _last_rx_ms > LINK_TIMEOUT_MS)) {
+  // Cabo desligado ou módulo mudo: o estado NORMAL de um módulo que não fica
+  // ligado o tempo todo — nunca evento acima de `info`. Sem o cabo, cai na
+  // hora; com ele, depois do timeout.
+  if (_state.connected && (!_present || agora - _last_rx_ms > LINK_TIMEOUT_MS)) {
     _state.connected = false;
     event_log(SEV_INFO, COMP_FEEDER, "feeder.module_disconnected",
-              "Sem resposta do modulo do alimentador");
+              _present ? "Sem resposta do modulo do alimentador"
+                       : "Modulo do alimentador saiu do cabo");
   }
 
-  if (agora - _last_ping_ms >= PING_INTERVAL_MS) {
+  // Só fala com quem está no fio.
+  if (_present && agora - _last_ping_ms >= PING_INTERVAL_MS) {
     _last_ping_ms = agora;
     Serial2.print("PING\n");
     dbg_mark(DBG_FEEDER_PING);
   }
 }
+
+bool feeder_link_present() { return _present; }
 
 FeederLinkState feeder_link_get_state() {
   FeederLinkState s = _state;

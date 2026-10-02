@@ -121,6 +121,54 @@ int main() {
   feeder_link_request_config(9, 21, 6, true);
   CHECK(Serial2.out == "FEED\nFEED 4\nCFG 9 21 6 1\n", "formato FEED/CFG");
 
+  // Um ciclo do loop: o feeder_link é chamado a cada ~200 ms.
+  auto ciclos = [](int n) {
+    for (int i = 0; i < n; i++) {
+      g_millis += 200;
+      feeder_link_update();
+    }
+  };
+
+  printf("F12 conector vazio (pull-down): ausente e nenhum PING\n");
+  feeder_link_init();
+  g_gpio_level = 0;
+  Serial2.out.clear();
+  ciclos(20);
+  CHECK(!feeder_link_present(), "ausente");
+  CHECK(Serial2.out.empty(), "nenhum PING para ninguem");
+
+  printf("F13 modulo plugado: presente em duas amostras, PING a cada 2 s\n");
+  g_gpio_level = 1;
+  ciclos(1);
+  CHECK(!feeder_link_present(), "uma amostra alta nao basta");
+  ciclos(1);
+  CHECK(feeder_link_present(), "duas: presente");
+  CHECK(Serial2.out == "PING\n", "primeiro PING");
+  ciclos(10);
+  CHECK(Serial2.out == "PING\nPING\n", "um PING a cada 2 s");
+
+  printf("F14 cabo desligado com o modulo conectado: cai na hora, sem esperar 6 s\n");
+  feed("PONG 8 20 5 0 60 3 3 1\n");
+  CHECK(feeder_link_get_state().connected, "conectado");
+  g_events.clear();
+  g_gpio_level = 0;
+  ciclos(4);
+  CHECK(feeder_link_get_state().connected, "quatro amostras baixas ainda podem ser bits");
+  ciclos(1);
+  CHECK(!feeder_link_present() && !feeder_link_get_state().connected, "cinco: ausente e desconectado");
+  CHECK(has("feeder.module_disconnected"), "evento disconnected");
+  Serial2.out.clear();
+  ciclos(20);
+  CHECK(Serial2.out.empty(), "e nenhum PING depois");
+
+  printf("F15 o 0x00 do break nao estraga a linha seguinte\n");
+  g_gpio_level = 1;
+  Serial2.in += std::string(1, '\0') + "PONG 6 18 2 1 -1 0 0 0\n";
+  feeder_link_update();
+  s = feeder_link_get_state();
+  CHECK(s.connected && s.hour1 == 6 && s.grains_per_feeding == 2, "PONG depois do 0x00 aplicado");
+  CHECK(feeder_link_present(), "linha valida prova presenca");
+
   printf("\n%d verificacoes ok, %d falharam\n", g_ok, g_fail);
   return g_fail ? 1 : 0;
 }

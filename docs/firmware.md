@@ -157,12 +157,36 @@ Com o servidor fora do ar, o intervalo cresce até 30 s. Sem isso seriam 20
 requisições por minuto sem propósito, cada uma com timeout de 4 s. O aquário
 segue operando sozinho e volta a falar quando houver com quem.
 
+### O alimentador: só com ele no fio (2.0.1)
+
+O firmware só fala do módulo do alimentador quando ele está lá, nos dois
+sentidos:
+
+- **Pelo fio.** O RX (`GPIO16`) tem pull-down. Com o conector vazio, o fio fica
+  em nível baixo; com o módulo ligado, em alto, porque a UART dele repousa em
+  alto. Duas amostras em alto dão o módulo como presente, e cinco em baixo
+  (~1 s) como ausente: os bits de um byte duram ~104 µs e nunca enchem cinco
+  amostras de ciclos diferentes. Sem módulo, nenhum `PING` sai. Com o cabo
+  arrancado, a desconexão é na hora, sem esperar os 6 s de silêncio.
+- **Para o servidor.** O bloco `feeder` só vai no POST com o módulo
+  conectado. A agenda só vai depois do primeiro `PONG` ou `SCHEDULE` válido, e
+  a última alimentação só se houve uma.
+
+Até a 2.0.0, o `PING` saía a cada 2 s para ninguém, e o bloco ia inteiro, com
+zeros. "0 grãos", abaixo do mínimo do contrato, virou um evento de correção
+por POST em produção (v1.1.0), e a agenda 00h/00h apareceu no app para um
+módulo que nunca existiu. O pull-up que havia no RX segurava o fio vazio
+quieto, mas no mesmo nível de um módulo ocioso. O pull-down também segura o
+fio quieto e ainda diferencia os dois casos.
+
+Na bancada, `/status` mostra `feeder.present`: falso com o conector vazio.
+
 ---
 
 ## Verificado
 
 - **Compila** contra ESP32 core 3.3.8 e ArduinoJson 7.4.3, sem nenhum aviso nos
-  arquivos do projeto mesmo com `--warnings all`: 1.137.786 bytes (86% do
+  arquivos do projeto mesmo com `--warnings all`: 1.137.662 bytes (86% do
   flash), 57 KB de RAM global (17%).
 - **Os quatro formatos de corpo** que o firmware emite (normal, sensor ausente,
   RTC sumido, com `ack` de recusa e eventos) validam contra
@@ -180,9 +204,15 @@ segue operando sozinho e volta a falar quando houver com quem.
   fuso certo → módulo reencontrado; hora errada isolada sem trocar a luz;
   autodiagnóstico em 163 ms com a pilha do loop no máximo a ~3,6 KB dos 8 KB;
   loop travado de propósito → reinício pelo watchdog em ~60 s.
+- **Presença do alimentador** (2026-10-02, firmware 2.0.1 de produção): com o
+  conector vazio, o pull-down interno basta, e `/status` mostra
+  `feeder.present: false`. Não há resistor externo no `GPIO16` da placa
+  montada.
 - **Testes de host** (g++ no PC, com o `.cpp` de produção e stubs mínimos de
-  Wire/RTClib/Serial): 37 verificações da automação por horário e da leitura do
-  DS3231, 24 do parser do enlace com o alimentador.
+  Wire/RTClib/Serial/GPIO): 37 verificações da automação por horário e da
+  leitura do DS3231, e 37 do enlace com o alimentador: parser, presença no
+  fio, nenhum `PING` sem módulo, desconexão na hora com o cabo arrancado e o
+  0x00 do *break*.
 
 ## Não verificado — exige hardware
 

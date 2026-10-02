@@ -24,7 +24,11 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "outputs": ["coverage/**"]
+      "outputs": ["coverage/**"],
+      // Sem declarar, o turbo filtrava a variável e os testes que precisam de
+      // Postgres de verdade (ingest, rollup, upgrade) eram pulados em silêncio
+      // no CI — o serviço `postgres` do workflow subia para nada.
+      "env": ["DATABASE_URL"]
     }
   }
 }

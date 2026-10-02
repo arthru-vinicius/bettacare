@@ -74,8 +74,19 @@
 #define PIN_POT        34   // Potenciômetro B10K (ADC)
 #define PIN_FAN        17   // Fan 4 pinos, pino 4 — PWM 25 kHz
 #define PIN_FAN_TACH   25   // Fan 4 pinos, pino 3 — tacômetro (open-drain)
+#define PIN_FAN_POWER  26   // Corte de energia da ventoinha: AO3400 no retorno (GND); Tipo A, nunca para só por PWM
+// GPIO27 era o pino original — queimou (provável curto gate/dreno do AO3400
+// durante a montagem, expondo o pino a 12V). NÃO reutilize o GPIO27 pra nada.
 
 // DS3231SN usa o I2C padrão do ESP32: SDA = GPIO 21, SCL = GPIO 22
+
+// --- Módulo opcional de alimentação de precisão (UART2) ----------------------
+// Ver pinagem-e-montagem-esp32.md §8 e pinagem-alimentador-modulo.md.
+// Não são os pinos "padrão" 17/16 da UART2 porque o 17 já é o PWM da
+// ventoinha — ver a mesma nota no doc de pinagem.
+#define PIN_FEEDER_TX     4   // TXD2 — para o RX do módulo
+#define PIN_FEEDER_RX     16  // RXD2 — do TX do módulo
+#define FEEDER_LINK_BAUD  9600
 
 // --- NTP ---------------------------------------------------------------------
 // Fuso: Brasília = UTC-3 (sem horário de verão desde 2019).
@@ -101,7 +112,13 @@
 #define FAN_ESCALATION_DROP_C        0.5f
 
 // Leitura de temperatura mais velha que isto deixa de valer como estado atual.
-#define TEMP_MAX_STALE_MS   5000UL
+//
+// Precisa ser confortavelmente maior que o intervalo de amostragem do
+// DS18B20 (5 s, ver SAMPLE_INTERVAL_MS em temperature.cpp) somado ao tempo de
+// conversão. Com 5 s de teto, uma leitura recém-espacada apareceria como
+// "velha" e dispararia o failsafe da ventoinha sem nenhum defeito real.
+// 15 s dá margem de quase 3x. O servidor usa 30 s, ainda mais folgado.
+#define TEMP_MAX_STALE_MS   15000UL
 
 // --- API local do ESP32 e OTA ------------------------------------------------
 // Continua existindo para diagnóstico direto e recuperação, independente do

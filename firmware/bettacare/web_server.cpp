@@ -11,7 +11,9 @@
 #include "wifi_manager.h"
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
+#define ELEGANTOTA_USE_ASYNC_WEBSERVER 1
 #include <ElegantOTA.h>
+#include <Preferences.h>
 #include <WiFi.h>
 #include <string.h>
 
@@ -19,6 +21,40 @@ static AsyncWebServer _server(80);
 
 // Rastreia o início da última atualização OTA para log de progresso
 static unsigned long _ota_progress_ms = 0;
+
+// ── Desfecho do último OTA, persistido ───────────────────────────────────────
+#define OTA_NS      "bc_ota"
+#define OTA_KEY     "last"
+
+static char _ota_last_result[8] = "none";
+
+const char* webserver_ota_last_result() { return _ota_last_result; }
+
+/** Lê o desfecho gravado antes do reboot que o próprio OTA provocou. */
+static void _ota_load_last_result() {
+  Preferences prefs;
+  if (!prefs.begin(OTA_NS, true)) return;
+  String v = prefs.getString(OTA_KEY, "none");
+  prefs.end();
+
+  if (v == "ok" || v == "failed") {
+    strncpy(_ota_last_result, v.c_str(), sizeof(_ota_last_result) - 1);
+    _ota_last_result[sizeof(_ota_last_result) - 1] = '\0';
+  }
+}
+
+static void _ota_store_result(const char* resultado) {
+  strncpy(_ota_last_result, resultado, sizeof(_ota_last_result) - 1);
+  _ota_last_result[sizeof(_ota_last_result) - 1] = '\0';
+
+  Preferences prefs;
+  if (!prefs.begin(OTA_NS, false)) {
+    nvs_report_failure();
+    return;
+  }
+  prefs.putString(OTA_KEY, resultado);
+  prefs.end();
+}
 
 #ifndef API_AUTH_TOKEN
 #define API_AUTH_TOKEN ""
@@ -58,6 +94,24 @@ static bool _auth_enabled() {
   return strlen(API_AUTH_TOKEN) > 0;
 }
 
+/**
+ * Compara em tempo constante (UPGRADE/03, F14) — o mesmo cuidado que o
+ * servidor já tem no ingest (`ingest/auth.ts`, SHA-256 dos dois lados antes
+ * do `timingSafeEqual`). Aqui é a API local do próprio ESP32, numa LAN
+ * doméstica, então a severidade é baixa; mas não havia motivo para a
+ * assimetria entre os dois lados do mesmo sistema.
+ */
+static bool _constant_time_equal(const String &a, const char *b) {
+  size_t len_a = a.length();
+  size_t len_b = strlen(b);
+  uint8_t diff = (uint8_t)(len_a != len_b);
+  size_t n = len_a < len_b ? len_a : len_b;
+  for (size_t i = 0; i < n; i++) {
+    diff |= (uint8_t)(a[i] ^ b[i]);
+  }
+  return diff == 0;
+}
+
 static bool _is_authorized(AsyncWebServerRequest *request) {
   if (!_auth_enabled()) return true;
 
@@ -68,7 +122,7 @@ static bool _is_authorized(AsyncWebServerRequest *request) {
     provided = request->getParam("token")->value();
   }
 
-  return provided.equals(API_AUTH_TOKEN);
+  return _constant_time_equal(provided, API_AUTH_TOKEN);
 }
 
 static bool _require_auth(AsyncWebServerRequest *request) {
@@ -199,6 +253,7 @@ static String _build_json() {
   JsonObject srv_obj        = doc["server"].to<JsonObject>();
   srv_obj["failures"]       = api_client_consecutive_failures();
   srv_obj["last_success_ms"] = api_client_last_success_ms();
+  srv_obj["last_http"]      = api_client_last_http_status();
   srv_obj["pending_events"] = event_log_pending();
 
   doc["fw_version"] = FW_VERSION;
@@ -211,6 +266,8 @@ static String _build_json() {
 }
 
 void webserver_init() {
+  _ota_load_last_result();
+
   // Headers globais (CORS por origem permitida é aplicado por requisição)
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type, X-Api-Token");
@@ -282,6 +339,8 @@ void webserver_init() {
 
   ElegantOTA.onStart([]() {
     Serial.println("[OTA] Atualizacao de firmware iniciada");
+    event_log(SEV_INFO, COMP_OTA, "ota.started",
+              "Atualizacao de firmware iniciada via OTA");
   });
 
   ElegantOTA.onProgress([](size_t current, size_t total) {
@@ -293,10 +352,20 @@ void webserver_init() {
   });
 
   ElegantOTA.onEnd([](bool success) {
+    // Grava **antes** de logar: o sucesso reinicia o dispositivo em seguida, e
+    // o evento provavelmente não chega a sair num POST. O que sobrevive ao
+    // reboot é o valor na flash, e é dele que o `diag` do próximo POST conta a
+    // história.
+    _ota_store_result(success ? "ok" : "failed");
+
     if (success) {
       Serial.println("[OTA] Concluido com sucesso! Reiniciando...");
+      event_log(SEV_INFO, COMP_OTA, "ota.succeeded",
+                "Atualizacao concluida; reiniciando com o firmware novo");
     } else {
       Serial.println("[OTA] Falha na atualizacao.");
+      event_log(SEV_ERROR, COMP_OTA, "ota.failed",
+                "Atualizacao falhou; seguindo com o firmware anterior");
     }
   });
 

@@ -20,8 +20,10 @@
 #include "app_state.h"
 #include "config.h"
 #include "device_config.h"
+#include "diagnostics.h"
 #include "event_log.h"
 #include "fan.h"
+#include "feeder_link.h"
 #include "light.h"
 #include "net_task.h"
 #include "rtc_manager.h"
@@ -72,11 +74,49 @@ static void _drain_commands() {
       case CMD_DEVICE_REBOOT:
         // Confirma antes de reiniciar: depois do restart não haveria quem
         // confirmasse, e o comando expiraria como se tivesse falhado.
+        //
+        // Quem decide QUANDO reiniciar é a task de rede, não um temporizador
+        // fixo aqui: só ela sabe quando o `ack` realmente saiu num POST bem-
+        // sucedido (UPGRADE/03, F2). Ver `app_state_request_reboot`.
         app_state_push_ack(cmd.id, true, nullptr);
         event_log(SEV_WARN, COMP_SYSTEM, "system.reboot_requested",
                   "Reinicio solicitado pelo servidor");
-        delay(1500);   // dá tempo de o próximo POST levar o ack
-        ESP.restart();
+        app_state_request_reboot();
+        break;
+
+      case CMD_DEVICE_DIAGNOSE:
+        // Roda aqui, no núcleo de controle, porque sonda I²C e 1-Wire — os
+        // mesmos barramentos que o loop já usa, e portanto sem disputa. A
+        // conversão completa do DS18B20 alonga esta volta (163 ms medidos
+        // aqui; até ~1 s com um sensor que use os 750 ms do datasheet), o que
+        // não perde toque: o botão é amostrado por um timer próprio, fora do
+        // loop (ver `light.cpp`).
+        diagnostics_run(cmd.id);
+        app_state_push_ack(cmd.id, true, nullptr);
+        break;
+
+      case CMD_FEEDER_FEED_NOW:
+        // Sem o módulo respondendo agora, o pedido não tem pra onde ir — é
+        // recusado na hora em vez de fingir sucesso. Com o módulo presente,
+        // este ack só confirma "repassei pro módulo": o resultado real
+        // (grãos pedidos × confirmados) chega depois no bloco `feeder` da
+        // telemetria, mesmo desenho de CMD_DEVICE_DIAGNOSE.
+        if (feeder_link_get_state().connected) {
+          feeder_link_request_feed(cmd.feeder_grains);
+          app_state_push_ack(cmd.id, true, nullptr);
+        } else {
+          app_state_push_ack(cmd.id, false, "feeder.module_offline");
+        }
+        break;
+
+      case CMD_FEEDER_SET_CONFIG:
+        if (feeder_link_get_state().connected) {
+          feeder_link_request_config(cmd.feeder_hour1, cmd.feeder_hour2,
+                                      cmd.feeder_grains, cmd.feeder_auto_enabled);
+          app_state_push_ack(cmd.id, true, nullptr);
+        } else {
+          app_state_push_ack(cmd.id, false, "feeder.module_offline");
+        }
         break;
 
       case CMD_UNKNOWN:
@@ -110,29 +150,53 @@ static void _publish_snapshot() {
   s.rtc_time[sizeof(s.rtc_time) - 1] = '\0';
 
   s.wifi_rssi       = wifi_rssi();
+  s.wifi_rssi_valid = wifi_rssi_valid();
   s.wifi_reconnects = wifi_reconnect_count();
   strncpy(s.wifi_ip, wifi_local_ip().c_str(), sizeof(s.wifi_ip) - 1);
   s.wifi_ip[sizeof(s.wifi_ip) - 1] = '\0';
 
   s.uptime_ms = millis();
 
+  // Diagnóstico do controlador que nasce no núcleo de controle (UPGRADE/03,
+  // F7) — o resto (heap, motivo do reset, latência do POST) é medido
+  // diretamente pela task de rede, que já roda no núcleo certo para isso.
+  s.button_pressed  = light_button_pressed();
+  s.pot_raw_adc     = (uint16_t)fan_get_pot_raw_adc();
+  s.tach_pulses_raw = fan_get_tach_pulses_raw();
+
+  FeederLinkState fs = feeder_link_get_state();
+  s.feeder_connected            = fs.connected;
+  s.feeder_auto_enabled         = fs.auto_enabled;
+  s.feeder_hour1                = fs.hour1;
+  s.feeder_hour2                = fs.hour2;
+  s.feeder_grains_per_feeding   = fs.grains_per_feeding;
+  s.feeder_last_feed_age_s      = fs.last_feed_age_s;
+  s.feeder_last_feed_requested  = fs.last_feed_requested;
+  s.feeder_last_feed_confirmed  = fs.last_feed_confirmed;
+  s.feeder_last_feed_ok         = fs.last_feed_ok;
+
   app_state_publish(s);
 }
 
 void setup() {
+  // Sem esperar monitor serial: a luz fica apagada até o primeiro `loop()`
+  // decidir pelo horário, e os 2 s que a espera somava a cada reinício (OTA,
+  // watchdog) eram escuro no aquário só para quem estivesse com o cabo USB
+  // conectado. O firmware de debug mantém a espera.
   Serial.begin(115200);
-  delay(2000);
 
   // Ordem importa: o log precisa existir antes de qualquer módulo querer
   // registrar algo, e a config antes de qualquer módulo querer lê-la.
   event_log_init();
   app_state_init();
   device_config_init();
+  diagnostics_init();
 
   light_init();
   temperature_init();
   fan_init();
   rtc_init();
+  feeder_link_init();
 
   api_client_init();
 
@@ -146,6 +210,16 @@ void setup() {
             device_config_on_time().c_str(), device_config_off_time().c_str(),
             device_config_snapshot().fan_trigger_c,
             device_config_snapshot().fan_off_c);
+
+  // Põe o próprio loop sob o watchdog de tarefas. Até aqui só a task de rede
+  // era vigiada: se o controle local travasse (um barramento preso, um
+  // deadlock), luz, ventoinha e botão congelariam em silêncio — e a telemetria
+  // seguiria saindo com o último retrato publicado, como se nada houvesse.
+  // O prazo é o mesmo da task de rede (60 s, ver `net_task.cpp`), folga larga
+  // para uma volta que normalmente leva milissegundos e, no pior caso (o
+  // autodiagnóstico), menos de 1 s. O core alimenta o watchdog antes de cada
+  // `loop()`; só precisamos inscrever a task.
+  enableLoopWDT();
 }
 
 void loop() {
@@ -153,10 +227,11 @@ void loop() {
 
   _drain_commands();
 
-  light_check_button();    // debounce de 50 ms
+  light_check_button();    // pressões já filtradas pelo amostrador de 2 ms
   temperature_update();    // conversão não-bloqueante do DS18B20
   fan_update();            // pot, histerese, cooldown, tacômetro
   rtc_check_automation();  // age só na transição de período
+  feeder_link_update();    // drena o UART2, PING periódico, detecta timeout
 
   _publish_snapshot();
 

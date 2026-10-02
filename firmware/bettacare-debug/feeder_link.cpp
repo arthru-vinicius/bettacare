@@ -311,6 +311,14 @@ static void _handle_line(char* line) {
     } else if (strcmp(motivo, "OCUPADO") == 0) {
       event_log(SEV_WARN, COMP_FEEDER, "feeder.feed_denied",
                 "Alimentacao %s recusada: outra refeicao em andamento", de);
+    } else if (strcmp(motivo, "CALIBRAR") == 0) {
+      event_log(SEV_WARN, COMP_FEEDER, "feeder.feed_denied",
+                "Alimentacao %s recusada: o doseador ainda nao foi calibrado", de);
+    } else {
+      // Motivo que este firmware não conhece (módulo mais novo): avisa do
+      // mesmo jeito, com o nome que veio.
+      event_log(SEV_WARN, COMP_FEEDER, "feeder.feed_denied",
+                "Alimentacao %s recusada pelo modulo (%s)", de, motivo);
     }
     return;
   }

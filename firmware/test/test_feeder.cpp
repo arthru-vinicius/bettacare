@@ -140,6 +140,10 @@ int main() {
   feed("DENIED OCUPADO 1 APP\n");
   CHECK(has("feeder.feed_denied"), "ocupado");
   g_events.clear();
+  feed("DENIED CALIBRAR 0 BOTAO\n");
+  feed("DENIED NOVIDADE 0 APP\n");
+  CHECK(g_events.size() == 2, "calibrar e motivo desconhecido tambem avisam");
+  g_events.clear();
   feed("DENIED LIMITE x BOTAO\n");
   CHECK(g_events.empty(), "contagem corrompida: linha descartada");
 

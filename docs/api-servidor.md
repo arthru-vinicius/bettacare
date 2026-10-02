@@ -187,6 +187,26 @@ Valor fora de faixa é grampeado, formato inválido em `rtc.time`, `wifi.ip` e
 evento de componente que o servidor não conhecia derrubava o POST inteiro. O
 log da recusa leva o valor recebido em cada campo.
 
+O mesmo campo corrigido de novo dentro de 1 h não abre outro
+`ingest.field_rejected`: soma `repeat_count` no evento aberto (o "×N" da aba
+Registros), e só a abertura sai como `warn` no log; as repetições vão para
+`debug`. Um campo que o firmware manda errado erra em todo POST — na v1.1.0
+foram 86 mil eventos por dia com a telemetria a 1 s.
+
+### Bloco `feeder`
+
+`connected` é o único campo que conta sempre. Com `connected: false`, o resto
+do bloco é ignorado antes de validar, e o servidor mantém a última agenda
+conhecida — desconectar é o estado normal de um módulo que não fica ligado o
+tempo todo. Sem o bloco, vale o mesmo: `connected` falso e a última agenda
+preservada. O firmware até a 2.0.0 mandava o bloco inteiro zerado quando o
+módulo nunca tinha respondido.
+
+`state.feeder` no `/overview` é `null` enquanto nenhum módulo foi detectado, e
+é isso que faz o app mostrar "nenhum módulo" em vez de uma agenda vazia. A
+migration 0009 limpou, uma vez, a agenda 00h/00h que os zeros tinham gravado
+em produção.
+
 ---
 
 ## Verificado de ponta a ponta
@@ -204,6 +224,13 @@ O que foi exercitado contra Postgres 17 real, simulando o ESP32 com `curl`:
 - planilhas de registros e de medições com BOM, `;`, vírgula decimal e fuso de
   exibição
 - evento de componente desconhecido descartado sozinho, o resto do POST aceito
+- a mesma correção em 30 POSTs vira um evento só com `repeat_count` 30, e
+  abre outro passada a janela de 1 h
+- bloco do alimentador zerado (firmware 2.0.0) não gera evento nem agenda, e
+  desconectar preserva a última agenda conhecida
+- corpos com `feeder: {connected: false}` e sem o bloco `feeder`, contra a
+  imagem **v1.1.0** publicada: aceitos, sem correção nem evento — o firmware
+  novo pode ir para o aquário antes do servidor novo
 - sensor de temperatura ausente vira `missing`, veredito geral `critical`
 - silêncio do dispositivo vira `offline`, componentes viram `unknown` e o
   comando pendente expira com `cmd.expired`

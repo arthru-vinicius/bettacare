@@ -111,13 +111,30 @@ ela que alimenta a aba Saúde direto, sem varrer histórico.
 
 | Componente | `missing` | `degraded` | `fault` |
 |---|---|---|---|
-| `temp` (DS18B20) | nenhum device no barramento 1-Wire | leitura *stale* > 30 s | CRC inválido repetido |
-| `rtc` (DS3231) | I²C não responde | `lostPower` (bateria) | hora fora de faixa plausível |
-| `fan` | — | pot fora da faixa de ADC esperada | **duty > 0 e tacômetro em 0 por > 5 s** |
-| `light` (SSR) | — | — | **estado desejado ≠ estado reportado após 2 ciclos** |
-| `wifi` | — | RSSI < -80 dBm | N reconexões em janela curta |
-| `button` | — | preso pressionado > 30 s | — |
-| `api` | — | POST falhou 1–3× seguidas | POST falhando > 60 s |
+| `temp` (DS18B20) | nenhum device no barramento 1-Wire | CRC inválido, ou leitura *stale* > 30 s | — |
+| `rtc` (DS3231) | I²C não responde | `lost_power` (bateria) | — |
+| `fan` | — | modo de segurança (temperatura indisponível) | **duty > 0 e tacômetro em 0 por ≥ 5 s** |
+| `light` (SSR) | — | — | **estado ≠ o do último comando do app por ≥ 5 s** |
+| `wifi` | — | RSSI < -80 dBm | — |
+| `button` | — | preso pressionado ≥ 30 s | — |
+| `pot` | — | — | — |
+| `api` | — | o POST anterior falhou | — |
+| `nvs` | — | falha de escrita desde o boot | — |
+| `ota` | — | — | a última atualização falhou |
+| `system` | — | heap < 40 KB, ou eventos perdidos | reinício não comandado (brownout, panic, watchdog) |
+
+O código é `apps/server/src/health/evaluate.ts`; esta tabela é o resumo. Três
+linhas pedem explicação:
+
+- **`light`** só conta enquanto a última mudança da luz foi o próprio
+  comando. Botão físico e automação também mudam a luz, e isso não é falha
+  (UPGRADE/07).
+- **`pot`** só mostra a leitura. Nenhum valor isolado é defeito: o mínimo é
+  como se desliga a ventoinha, e o topo do curso satura o ADC em 4095 em
+  qualquer montagem boa (UPGRADE/02, §8). Até a v1.1.0, "≥ 4090" contava como
+  mau contato e dava alarme falso com o potenciômetro funcionando.
+- **`api`** não tem `fault`: se o POST chegou, a comunicação funciona agora. O
+  que `api_failures` mostra é quantas tentativas falharam antes desta.
 
 Duas linhas dessa tabela merecem atenção porque são as que respondem à pergunta
 *"por que não consigo controlar?"*:

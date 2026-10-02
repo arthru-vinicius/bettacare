@@ -361,7 +361,29 @@ Latência do toque ao "confirmado": de 3–8 s para ~1–2 s, com a telemetria a
 1 s (ajuste na Saúde), a confirmação antecipada no firmware e o app
 consultando a cada 2 s (0,6 s com comando em voo).
 
-Sem migration e sem variável de ambiente nova — determinações do homelab para
-esta rodada. Testes: 41 do servidor (9 novos, contra Postgres real), 27 do
-contrato, 61 de host do firmware, e as telas conferidas num navegador contra
-um aquário simulado.
+Uma migration só, a 0008 (os enums do alimentador, aditiva), e nenhuma
+variável de ambiente nova — determinações do homelab para esta rodada. Testes:
+42 do servidor (10 novos, contra Postgres real), 27 do contrato, 61 de host do
+firmware, e as telas conferidas num navegador contra um aquário simulado.
+Publicada como **v1.1.0**.
+
+## Depois do deploy — v1.1.1 (2026-10-02)
+
+Minutos depois da v1.1.0 no ar, o `homelab-c4` viu um `ingest.field_rejected`
+por POST: 526 em 15 min, todos em `feeder.grains_per_feeding`, e ~59 por
+minuto depois de o intervalo ir para 1 s (projeção de 86 mil eventos e
+~36 MB por dia).
+
+| Defeito | Correção |
+|---|---|
+| Firmware 2.0.0 mandava o bloco `feeder` inteiro, zerado sem módulo: "0 grãos" abaixo do mínimo, corrigido e registrado a cada POST | O contrato ignora o resto do bloco com `connected: false`; o firmware seguinte só fala do módulo quando ele está lá |
+| Os zeros gravaram agenda 00h/00h, 1 grão: o app mostrava um alimentador "desconectado" que nunca existiu | Migration 0009, só de dados, restrita ao `aquarium-01` e à assinatura exata dos zeros |
+| A mesma correção em todo POST virava um evento e um `warn` por POST | Agrupada por campo em 1 h, com `repeat_count`; repetição vai para `debug` |
+| "Potenciômetro fora da faixa — provável mau contato" com o potenciômetro só no fim do curso | O ADC satura em 4095 no topo em qualquer montagem boa (UPGRADE/02, §8): leitura isolada não é mais defeito |
+
+O alarme do potenciômetro foi conferido em produção: na véspera, 184
+`pot.fan_speed` e 13 `pot.fan_off` — ele girava e a ventoinha respondia.
+Corpos com `feeder: {connected: false}` e sem o bloco foram testados contra a
+**imagem v1.1.0 publicada**: aceitos, sem correção nem evento, então o firmware
+novo pode ir para o aquário antes do servidor novo. Testes: 48 do servidor (6
+novos), 30 do contrato.

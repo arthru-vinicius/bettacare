@@ -203,6 +203,26 @@ export type DiagnosticReport = z.infer<typeof diagnosticReportSchema>;
 
 // ── Requisição ────────────────────────────────────────────────────────────
 
+/**
+ * Com `connected: false` não há dado fresco do módulo: o resto do bloco é
+ * descartado antes de validar — o que `feederStateSchema` sempre prometeu,
+ * agora garantido do lado de cá.
+ *
+ * O firmware até a 2.0.0 mandava o bloco inteiro em todo POST, zerado quando o
+ * módulo nunca tinha respondido desde o boot. `grains_per_feeding: 0` fica
+ * abaixo do mínimo e virava correção — um evento `ingest.field_rejected` **por
+ * POST** em produção —, e `hour1`/`hour2` zerados passavam na validação e
+ * sobrescreviam a agenda: o app mostrava um alimentador que nunca existiu.
+ *
+ * Fica no corpo da requisição, não em `feederStateSchema`: a mesma forma
+ * descreve o `/overview`, onde `connected: false` vem **com** a última agenda
+ * conhecida, de propósito.
+ */
+function dropStaleFeederFields(v: unknown): unknown {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return v;
+  return (v as { connected?: unknown }).connected === false ? { connected: false } : v;
+}
+
 export const telemetryRequestSchema = z.object({
   device_id: deviceIdSchema,
   /** Contador em NVS, incrementado a cada boot. Detecta reinícios. */
@@ -222,7 +242,7 @@ export const telemetryRequestSchema = z.object({
   rtc: rtcStateSchema,
   wifi: wifiStateSchema,
   /** Ausente = firmware anterior à integração do alimentador, não "sem módulo". */
-  feeder: feederStateSchema.optional(),
+  feeder: z.preprocess(dropStaleFeederFields, feederStateSchema).optional(),
 
   /** A opinião do firmware sobre a própria saúde. Opcional. */
   health: deviceHealthReportSchema.optional(),

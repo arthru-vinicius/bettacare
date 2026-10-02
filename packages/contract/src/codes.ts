@@ -398,11 +398,14 @@ export const EVENT_CODES = {
     label: "Leitura do botão não iniciou",
     hint: "O timer que amostra o botão físico não subiu: ele fica sem efeito até o dispositivo reiniciar.",
   },
+  // Só em registros antigos: até a v1.1.0 o servidor tratava o topo do curso
+  // como defeito. Saiu porque o ADC do ESP32 satura em 4095 ali em qualquer
+  // montagem boa (UPGRADE/02, §8).
   "pot.out_of_range": {
     comp: "pot",
     sev: "warn",
-    label: "Potenciômetro fora da faixa",
-    hint: "A leitura do ADC saiu do intervalo esperado — provável mau contato.",
+    label: "Potenciômetro no limite do ADC",
+    hint: "Aviso das versões até a v1.1.0, que era alarme falso: no fim do curso o ADC satura em 4095 mesmo com tudo certo. Só seria mau contato se a leitura não mudasse ao girar.",
   },
   "pot.fan_off": {
     comp: "pot",

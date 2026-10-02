@@ -183,6 +183,41 @@ describe("saneamento de telemetria (UPGRADE/05, C1)", () => {
   });
 });
 
+describe("alimentador no corpo da telemetria", () => {
+  /** O que o firmware 2.0.0 manda em todo POST quando o módulo nunca respondeu. */
+  const zerado = {
+    connected: false,
+    auto_enabled: false,
+    hour1: 0,
+    hour2: 0,
+    grains_per_feeding: 0,
+    last_feed_age_s: null,
+    last_feed_requested: 0,
+    last_feed_confirmed: 0,
+    last_feed_ok: false,
+  };
+
+  it("desconectado, só `connected` conta — os zeros não viram correção nem agenda", () => {
+    const r = sanitizeTelemetryRequest({ ...post, feeder: zerado });
+    assert.equal(r.corrections.length, 0);
+    assert.deepEqual(r.data?.feeder, { connected: false });
+  });
+
+  it("conectado, campo fora de faixa continua sendo correção", () => {
+    const r = sanitizeTelemetryRequest({
+      ...post,
+      feeder: { ...zerado, connected: true, hour1: 7, hour2: 19 },
+    });
+    assert.equal(r.data?.feeder?.grains_per_feeding, 1);
+    assert.equal(r.data?.feeder?.hour1, 7);
+    assert.equal(r.corrections[0]?.path, "feeder.grains_per_feeding");
+  });
+
+  it("sem o bloco continua aceito — firmware anterior ao alimentador", () => {
+    assert.equal(telemetryRequestSchema.parse(post).feeder, undefined);
+  });
+});
+
 describe("configuração", () => {
   it("recusa horários de acender e apagar iguais — a luz ficaria acesa para sempre", () => {
     const r = deviceConfigSchema.safeParse({

@@ -426,13 +426,16 @@ estresse contínuo do pad, dia após dia.
 
 ```text
 Pino 4 da ventoinha ──── dreno
-                                  [2N7002]
+                                  [AO3400]
 GPIO17 ──── 1k ──── gate
                       │            fonte
                     100k             │
                       │              │
 GND ──────────────────┴──────────────┘
 ```
+
+Esta montagem usa um AO3400, o mesmo do corte de energia; qualquer N-MOSFET
+de nível lógico serve (um 2N7002 também).
 
 ⚠️ **O MOSFET inverte o sinal.** Duty de 30 % no software vira 70 % na
 ventoinha. Esta montagem mediu 5 V e usa o MOSFET, então `_apply_speed()` em
@@ -520,6 +523,13 @@ GND comum ───────────────────────�
   protege contra o pico indutivo do motor no instante do corte.
 - `GPIO26` → 1 kΩ → gate do AO3400, mesmo padrão dos outros MOSFETs deste
   documento.
+- **Com a energia cortada, a linha de PWM fica solta** (firmware 2.0.3: duty
+  0 no `GPIO17`, buffer desligado). O corte é no retorno, e a ventoinha sem o
+  próprio terra procura outro: até a 2.0.2, desligar escrevia o complemento de
+  0% — buffer conduzindo o tempo todo, pino 4 preso no `GND` —, e a eletrônica
+  dela voltava por ali. Sobravam **3 a 7 V** entre os pinos 1 e 2, e ela girava
+  aos trancos, cadenciados, com o `GPIO26` corretamente em 0 V. Para conferir:
+  com a ventoinha desligada, a tensão entre os pinos 1 e 2 fica perto de 0 V.
 - **O resistor de 100 kΩ aqui é pullup pro `3V3`, não pulldown pro `GND`** —
   o oposto do gate do SSR e do PWM. É deliberado: a regra do projeto é que uma
   falha sempre penda pra "mais resfriamento", nunca menos (mesmo raciocínio

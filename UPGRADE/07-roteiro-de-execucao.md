@@ -419,5 +419,18 @@ ficou com mínima -48 e média 1,5 °C abaixo do real.
 | Registros | Água fora de 16–33 °C vira um aviso por episódio, com duração, horário e pico |
 | Migration 0010 | Só dados: tira o -48 do histórico e refaz a hora |
 
-Testes: 54 do servidor (6 novos), 30 do contrato, 95 de host do firmware (21
-novos, do termômetro). O 2.0.2 está gravado no ESP32 da bancada.
+**Ventoinha dando trancos desligada, e o potenciômetro lento e às vezes
+ignorado** (relato do Arthur na bancada, com multímetro: 3 a 7 V nos terminais
+da ventoinha "desligada", com o `GPIO26` corretamente em 0 V). Era firmware:
+
+| Defeito | Correção (2.0.3) |
+|---|---|
+| O corte é no retorno, e desligar escrevia o complemento de 0% no PWM: o MOSFET do buffer (um AO3400 nesta montagem) prendia o pino 4 no `GND`, e a ventoinha voltava por ali | Com a energia cortada, duty 0 — linha solta |
+| Pot lido a cada 500 ms com um filtro de ~6 s até o valor novo | A cada volta do loop (200 ms), média de 8 conversões |
+| Pot só valia depois de ir ao mínimo e subir, de novo a cada boot, comando do app e virada da agenda | Assume quando girado (150 pontos, duas amostras seguidas); ruído e deriva não assumem |
+| 184 `pot.fan_speed` num dia | Um evento quando a mão para |
+
+Testes: 54 do servidor (6 novos), 30 do contrato, 115 de host do firmware (41
+novos: 21 do termômetro, 20 da ventoinha). O 2.0.3 está gravado no ESP32 da
+bancada; desligada, a ventoinha ficou com o tacômetro em 0 rpm por um minuto
+inteiro.

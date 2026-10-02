@@ -108,10 +108,10 @@ antes aceitava como toque os picos que o 1-Wire do `GPIO19` induz no fio do
 
 ## O que foi portado quase literalmente
 
-- **`fan.cpp`** — histerese, cooldown de 30 min, escalonamento progressivo,
-  failsafe de temperatura indisponível e a calibração do potenciômetro
-  (min → cima). É a lógica mais madura do projeto. Mudou só de onde vêm os
-  limiares: agora de `device_config`, ou seja, do servidor.
+- **`fan.cpp`** — histerese, cooldown de 30 min, escalonamento progressivo e
+  failsafe de temperatura indisponível. É a lógica mais madura do projeto.
+  Mudou de onde vêm os limiares (agora de `device_config`, ou seja, do
+  servidor) e, na 2.0.3, o potenciômetro e o desligar — ver abaixo.
 - **`rtc_manager.cpp`** — a regra de **agir só na transição de período** está
   intacta. É ela que faz um override manual sobreviver dentro da janela: sem
   isso, apagar a luz às 14h faria a automação reacendê-la no segundo seguinte.
@@ -156,6 +156,32 @@ falhando (aí vale o recuo abaixo).
 Com o servidor fora do ar, o intervalo cresce até 30 s. Sem isso seriam 20
 requisições por minuto sem propósito, cada uma com timeout de 4 s. O aquário
 segue operando sozinho e volta a falar quando houver com quem.
+
+### A ventoinha desligada de verdade, e o potenciômetro que responde (2.0.3)
+
+**Desligar solta a linha de PWM.** O corte de energia é no retorno (pino 1,
+`GPIO26`), e o PWM passa por um MOSFET que inverte o sinal. Até a 2.0.2,
+desligar escrevia o complemento de 0% — o MOSFET do PWM conduzindo o tempo
+todo, o pino 4 preso no `GND` —, e a ventoinha, sem o próprio terra, voltava
+por ali: 3 a 7 V nos terminais e giros aos trancos, cadenciados, com o
+`GPIO26` corretamente em 0 V. Agora, com a energia cortada, o duty é 0 e a
+linha fica solta; ao religar, o duty é escrito antes da energia.
+
+**O potenciômetro assume quando é girado.** Antes:
+
+- só valia depois de ir ao mínimo e subir — de novo a cada boot (OTA
+  incluída), comando do app e virada da agenda; girar de qualquer outro ponto
+  não fazia nada;
+- uma leitura a cada 500 ms com um filtro que levava ~6 s até o valor novo: a
+  velocidade "escorregava" por segundos, e desligar no mínimo demorava o mesmo.
+
+Agora ele é lido a cada volta do loop (200 ms), na média de 8 conversões.
+Fora do comando, assume quando anda mais de 150 pontos em duas amostras
+seguidas — um giro de mão; um pico de ruído ou a deriva lenta do ADC não. No
+comando, a velocidade acompanha o giro na mesma volta, o mínimo desliga, e o
+evento `pot.fan_speed` sai quando a mão para (eram 184 num dia de bancada). Um
+comando do app, ou a volta ao automático da agenda, tira o comando dele de
+novo: vale o último.
 
 ### O termômetro: leitura que passou no CRC ainda pode ser lixo (2.0.2)
 
@@ -210,7 +236,7 @@ Na bancada, `/status` mostra `feeder.present`: falso com o conector vazio.
 ## Verificado
 
 - **Compila** contra ESP32 core 3.3.8 e ArduinoJson 7.4.3, sem nenhum aviso nos
-  arquivos do projeto mesmo com `--warnings all`: 1.138.378 bytes (86% do
+  arquivos do projeto mesmo com `--warnings all`: 1.138.554 bytes (86% do
   flash), 57 KB de RAM global (17%).
 - **Os quatro formatos de corpo** que o firmware emite (normal, sensor ausente,
   RTC sumido, com `ack` de recusa e eventos) validam contra
@@ -233,14 +259,19 @@ Na bancada, `/status` mostra `feeder.present`: falso com o conector vazio.
   `feeder.present: false`. Não há resistor externo no `GPIO16` da placa
   montada.
 - **Testes de host** (g++ no PC, com o `.cpp` de produção e stubs mínimos de
-  Wire/RTClib/Serial/GPIO/DallasTemperature): 37 verificações da automação por
-  horário e da leitura do DS3231; 37 do enlace com o alimentador — parser,
-  presença no fio, nenhum `PING` sem módulo, desconexão na hora com o cabo
-  arrancado e o 0x00 do *break*; e 21 do termômetro — o -48,00 de produção
-  descartado com o scratchpad, salto relido e descartado, mudança real
-  confirmada, 85,0 de power-on e sensor perdido por leituras impossíveis.
-- **Firmware 2.0.2 no ESP32 da bancada** (2026-10-02): temperatura válida e
-  renovada a cada ~5 s, POST com 200.
+  Wire/RTClib/Serial/GPIO/ADC/LEDC/DallasTemperature): 37 verificações da
+  automação por horário e da leitura do DS3231; 37 do enlace com o
+  alimentador — parser, presença no fio, nenhum `PING` sem módulo, desconexão
+  na hora com o cabo arrancado e o 0x00 do *break*; 21 do termômetro — o
+  -48,00 de produção descartado com o scratchpad, salto relido e descartado,
+  mudança real confirmada, 85,0 de power-on e sensor perdido por leituras
+  impossíveis; e 20 da ventoinha — desligar soltando a linha de PWM, o pot
+  assumindo em 400 ms sem passar pelo mínimo, acompanhando o giro com um
+  evento só, desligando no mínimo, e ruído isolado e deriva lenta do ADC que
+  não assumem.
+- **Firmware 2.0.2 e 2.0.3 no ESP32 da bancada** (2026-10-02): temperatura
+  válida e renovada a cada ~5 s, POST com 200; ventoinha desligada com o
+  tacômetro em 0 rpm por um minuto inteiro.
 
 ## Não verificado — exige hardware
 

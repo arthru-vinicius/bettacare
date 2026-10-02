@@ -1,3 +1,4 @@
+import { TEMP_USUAL_C } from "@bettacare/contract";
 import { sql } from "drizzle-orm";
 
 import {
@@ -199,9 +200,14 @@ export async function rollupPendingHours(rt: Runtime): Promise<number> {
       select
         device_id,
         hour,
-        min(temp_celsius)::real                                        as temp_min,
-        avg(temp_celsius)::real                                        as temp_avg,
-        max(temp_celsius)::real                                        as temp_max,
+        -- Só a faixa habitual da água (TEMP_USUAL_C, no contrato): o gráfico
+        -- mostra o comportamento normal, e o que saiu dela vira aviso nos
+        -- Registros, com duração e pico (temp.out_of_usual_range). Um -48
+        -- corrompido que passou no CRC puxava a média da hora 1,5 °C para
+        -- baixo e esticava o eixo do gráfico inteiro.
+        (min(temp_celsius) filter (where temp_celsius between ${TEMP_USUAL_C.min} and ${TEMP_USUAL_C.max}))::real as temp_min,
+        (avg(temp_celsius) filter (where temp_celsius between ${TEMP_USUAL_C.min} and ${TEMP_USUAL_C.max}))::real as temp_avg,
+        (max(temp_celsius) filter (where temp_celsius between ${TEMP_USUAL_C.min} and ${TEMP_USUAL_C.max}))::real as temp_max,
         -- O coalesce precisa vir DENTRO do least, não fora: no PostgreSQL
         -- least(60, NULL) devolve 60, porque LEAST e GREATEST ignoram nulos.
         -- Com o coalesce do lado de fora, toda hora sem luz seria registrada

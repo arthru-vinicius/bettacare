@@ -71,6 +71,13 @@
       "when": 1790918392491,
       "tag": "0009_limpa_alimentador_fantasma",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790967609107,
+      "tag": "0010_temperatura_impossivel",
+      "breakpoints": true
     }
   ]
 }

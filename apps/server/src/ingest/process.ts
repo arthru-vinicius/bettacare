@@ -3,6 +3,8 @@ import {
   DEFAULT_CONFIG,
   deviceConfigSchema,
   HEALTH_STATUS_LABELS,
+  TEMP_PLAUSIBLE_C,
+  TEMP_USUAL_C,
   type Component,
   type DeviceConfig,
   type PendingCommand,
@@ -81,12 +83,14 @@ const HEALTH_REFRESH_MS = 5_000;
 export async function processTelemetry(
   db: Db,
   cfg: AppConfig,
-  body: TelemetryRequest,
+  received: TelemetryRequest,
   now: Date,
   /** Campos que o saneamento (UPGRADE/05, C1) precisou corrigir antes de aceitar o corpo. */
   corrections: readonly TelemetryCorrection[] = [],
 ): Promise<ProcessResult> {
   const alerts: PushMessage[] = [];
+  /** O corpo como é processado: igual ao recebido, menos uma leitura impossível de temperatura. */
+  let body = received;
 
   return db.transaction(async (tx) => {
     // ── 1. O dispositivo existe e acabou de falar ────────────────────────
@@ -143,7 +147,7 @@ export async function processTelemetry(
         newCorrections.push(c);
         continue;
       }
-      if (await countRepeatedCorrection(tx, body.device_id, c.path, now)) continue;
+      if (await countRepeatedEvent(tx, body.device_id, "ingest.field_rejected", now, c.path)) continue;
       await insertServerEvent(tx, body.device_id, now, {
         sev: "warn",
         comp: "api",
@@ -179,6 +183,8 @@ export async function processTelemetry(
     let wroteHistory = false;
 
     if (!duplicate) {
+      body = await discardImplausibleTemperature(tx, body, previous, now);
+
       /**
        * O "desejado" de um comando só vale enquanto a última mudança da luz
        * foi esse comando (UPGRADE/07). Quando o botão físico ou a automação
@@ -191,6 +197,14 @@ export async function processTelemetry(
 
       await recordHealth(tx, body, now, lightDesired, alerts);
       await recordDeviceEvents(tx, body, now);
+      await trackUsualRange(
+        tx,
+        body.device_id,
+        body.temperature.celsius,
+        previous?.tempCelsius ?? null,
+        now,
+        cfg.TZ_DISPLAY,
+      );
 
       wroteHistory = shouldWriteHistory(
         body,
@@ -294,8 +308,8 @@ export async function processTelemetry(
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 /**
- * Por quanto tempo a mesma correção soma no evento já aberto em vez de abrir
- * outro.
+ * Por quanto tempo o mesmo evento repetido soma no que já está aberto em vez
+ * de abrir outro.
  *
  * Um campo que o firmware manda errado não erra uma vez: erra em todo POST,
  * até alguém gravar outro firmware. Foi o caso do `feeder.grains_per_feeding`
@@ -304,18 +318,23 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
  * "×N" da aba Registros) ainda separa um pico isolado de ruído de um defeito
  * que não para.
  */
-const CORRECTION_WINDOW_MS = 60 * 60 * 1000;
+const REPEAT_WINDOW_MS = 60 * 60 * 1000;
 
 /**
- * Soma 1 ao `repeat_count` do `ingest.field_rejected` do mesmo campo aberto
- * dentro da janela. Falso quando não há nenhum — aí a correção é notícia, e o
- * evento novo é do chamador.
+ * Soma 1 ao `repeat_count` do evento do servidor com este código (e, se
+ * dado, deste campo) aberto dentro da janela. Falso quando não há nenhum —
+ * aí é notícia, e o evento novo é do chamador.
+ *
+ * Só eventos do servidor: o firmware usa alguns dos mesmos códigos
+ * (`temp.implausible`), e somar a repetição de um no evento do outro
+ * misturaria quem viu o quê.
  */
-async function countRepeatedCorrection(
+async function countRepeatedEvent(
   tx: Tx,
   deviceId: string,
-  field: string,
+  code: string,
   now: Date,
+  field?: string,
 ): Promise<boolean> {
   const [aberto] = await tx
     .select({ receivedAt: events.receivedAt, id: events.id })
@@ -323,9 +342,10 @@ async function countRepeatedCorrection(
     .where(
       and(
         eq(events.deviceId, deviceId),
-        eq(events.code, "ingest.field_rejected"),
-        gte(events.receivedAt, new Date(now.getTime() - CORRECTION_WINDOW_MS)),
-        sql`${events.ctx}->>'field' = ${field}`,
+        eq(events.source, "server"),
+        eq(events.code, code),
+        gte(events.receivedAt, new Date(now.getTime() - REPEAT_WINDOW_MS)),
+        field === undefined ? undefined : sql`${events.ctx}->>'field' = ${field}`,
       ),
     )
     .orderBy(desc(events.receivedAt))
@@ -337,6 +357,224 @@ async function countRepeatedCorrection(
     .set({ repeatCount: sql`${events.repeatCount} + 1` })
     .where(and(eq(events.receivedAt, aberto.receivedAt), eq(events.id, aberto.id)));
   return true;
+}
+
+// ── Temperatura: leitura impossível e faixa habitual ───────────────────────
+
+const plausivel = (c: number) => c >= TEMP_PLAUSIBLE_C.min && c <= TEMP_PLAUSIBLE_C.max;
+
+const foraDoHabitual = (c: number | null): c is number =>
+  c !== null && (c < TEMP_USUAL_C.min || c > TEMP_USUAL_C.max);
+
+/** `-48` → `"-48,0"`: o texto é para gente, nos Registros e na planilha. */
+const graus = (c: number) => c.toFixed(1).replace(".", ",");
+
+/**
+ * Leitura fora de `TEMP_PLAUSIBLE_C` não é temperatura (ver o contrato). O
+ * firmware 2.0.2 já a descarta na origem; isto cobre firmware anterior e
+ * qualquer regressão. O POST segue como se trouxesse a última leitura boa —
+ * nem o banco, nem a saúde, nem o gráfico veem o valor — e o descarte vira
+ * um evento, agrupado como as correções: um sensor com defeito erra em todo
+ * POST.
+ */
+async function discardImplausibleTemperature(
+  tx: Tx,
+  body: TelemetryRequest,
+  previous: { tempCelsius: number | null } | undefined,
+  now: Date,
+): Promise<TelemetryRequest> {
+  const c = body.temperature.celsius;
+  if (c === null || plausivel(c)) return body;
+
+  if (!(await countRepeatedEvent(tx, body.device_id, "temp.implausible", now))) {
+    await insertServerEvent(tx, body.device_id, now, {
+      sev: "warn",
+      comp: "temp",
+      code: "temp.implausible",
+      msg: `Leitura impossível descartada: ${graus(c)} °C (a água daqui não sai de ${TEMP_PLAUSIBLE_C.min}–${TEMP_PLAUSIBLE_C.max} °C)`,
+      ctx: { received: c },
+    });
+  }
+
+  const anterior = previous?.tempCelsius ?? null;
+  const boa = anterior !== null && plausivel(anterior) ? anterior : null;
+  return {
+    ...body,
+    temperature: {
+      ...body.temperature,
+      celsius: boa,
+      // Sem leitura boa anterior, "sem valor" com `valid` verdadeiro viraria
+      // "sensor perdido" na saúde — e o que houve foi uma leitura inválida.
+      ...(boa === null ? { valid: false } : {}),
+    },
+  };
+}
+
+const EPISODE_CODE = "temp.out_of_usual_range";
+/** Com o episódio aberto, a mensagem ("há 12 min") é reescrita a cada minuto ou num pico novo — não a cada POST. */
+const EPISODE_REFRESH_MS = 60_000;
+/** Até onde procurar um episódio ainda aberto. */
+const EPISODE_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
+
+interface Episode {
+  receivedAt: Date;
+  id: string;
+  direction: "above" | "below";
+  since: Date;
+  peak: number;
+  updatedAt: Date;
+}
+
+const limite = (d: Episode["direction"]) => (d === "above" ? TEMP_USUAL_C.max : TEMP_USUAL_C.min);
+const lado = (d: Episode["direction"]) => (d === "above" ? "acima" : "abaixo");
+const pico = (d: Episode["direction"]) => (d === "above" ? "máx." : "mín.");
+
+/**
+ * Água fora de `TEMP_USUAL_C` vira **um** aviso por episódio nos Registros:
+ * aberto na primeira leitura fora, atualizado enquanto durar, fechado na
+ * primeira de volta — com início, fim, duração e pico. É o que o gráfico deixa
+ * de mostrar (o rollup só agrega a faixa habitual).
+ *
+ * O caso comum, água na faixa agora e no POST anterior, não custa consulta.
+ */
+async function trackUsualRange(
+  tx: Tx,
+  deviceId: string,
+  celsius: number | null,
+  previousCelsius: number | null,
+  now: Date,
+  tz: string,
+): Promise<void> {
+  if (!foraDoHabitual(celsius) && !foraDoHabitual(previousCelsius) && previousCelsius !== null) {
+    return;
+  }
+  // Sem leitura agora, nada a decidir: um episódio aberto segue aberto.
+  if (celsius === null) return;
+
+  let aberto = await openEpisode(tx, deviceId, now);
+  if (!foraDoHabitual(celsius)) {
+    if (aberto !== undefined) await closeEpisode(tx, aberto, now, tz);
+    return;
+  }
+
+  const direction: Episode["direction"] = celsius > TEMP_USUAL_C.max ? "above" : "below";
+  if (aberto !== undefined && aberto.direction !== direction) {
+    await closeEpisode(tx, aberto, now, tz);
+    aberto = undefined;
+  }
+
+  if (aberto === undefined) {
+    await insertServerEvent(tx, deviceId, now, {
+      sev: "warn",
+      comp: "temp",
+      code: EPISODE_CODE,
+      msg: `Água a ${graus(celsius)} °C, ${lado(direction)} da faixa habitual (${TEMP_USUAL_C.min}–${TEMP_USUAL_C.max} °C)`,
+      ctx: {
+        open: true,
+        direction,
+        limit: limite(direction),
+        since: now.toISOString(),
+        peak: celsius,
+        updated_at: now.toISOString(),
+      },
+    });
+    return;
+  }
+
+  const novoPico = direction === "above" ? Math.max(aberto.peak, celsius) : Math.min(aberto.peak, celsius);
+  if (novoPico === aberto.peak && now.getTime() - aberto.updatedAt.getTime() < EPISODE_REFRESH_MS) {
+    return;
+  }
+  await tx
+    .update(events)
+    .set({
+      msg: `Água ${lado(direction)} de ${limite(direction)} °C há ${duracao(now.getTime() - aberto.since.getTime())} (${pico(direction)} ${graus(novoPico)} °C)`,
+      ctx: {
+        open: true,
+        direction,
+        limit: limite(direction),
+        since: aberto.since.toISOString(),
+        peak: novoPico,
+        updated_at: now.toISOString(),
+      },
+    })
+    .where(and(eq(events.receivedAt, aberto.receivedAt), eq(events.id, aberto.id)));
+}
+
+async function openEpisode(tx: Tx, deviceId: string, now: Date): Promise<Episode | undefined> {
+  const [row] = await tx
+    .select({ receivedAt: events.receivedAt, id: events.id, ctx: events.ctx })
+    .from(events)
+    .where(
+      and(
+        eq(events.deviceId, deviceId),
+        eq(events.source, "server"),
+        eq(events.code, EPISODE_CODE),
+        gte(events.receivedAt, new Date(now.getTime() - EPISODE_LOOKBACK_MS)),
+        sql`${events.ctx}->>'open' = 'true'`,
+      ),
+    )
+    .orderBy(desc(events.receivedAt))
+    .limit(1);
+  const ctx = row?.ctx;
+  if (row === undefined || ctx == null) return undefined;
+
+  const since = new Date(String(ctx["since"]));
+  const peak = Number(ctx["peak"]);
+  if (Number.isNaN(since.getTime()) || !Number.isFinite(peak)) return undefined;
+  const updatedAt = new Date(String(ctx["updated_at"]));
+  return {
+    receivedAt: row.receivedAt,
+    id: row.id,
+    direction: ctx["direction"] === "below" ? "below" : "above",
+    since,
+    peak,
+    updatedAt: Number.isNaN(updatedAt.getTime()) ? since : updatedAt,
+  };
+}
+
+async function closeEpisode(tx: Tx, e: Episode, now: Date, tz: string): Promise<void> {
+  const ms = now.getTime() - e.since.getTime();
+  await tx
+    .update(events)
+    .set({
+      msg: `Água ficou ${lado(e.direction)} de ${limite(e.direction)} °C por ${duracao(ms)}, ${intervalo(e.since, now, tz)} (${pico(e.direction)} ${graus(e.peak)} °C)`,
+      ctx: {
+        open: false,
+        direction: e.direction,
+        limit: limite(e.direction),
+        since: e.since.toISOString(),
+        until: now.toISOString(),
+        duration_s: Math.round(ms / 1000),
+        peak: e.peak,
+        updated_at: now.toISOString(),
+      },
+    })
+    .where(and(eq(events.receivedAt, e.receivedAt), eq(events.id, e.id)));
+}
+
+/** `12 min`, `1 h 05 min`, `menos de 1 min`. */
+function duracao(ms: number): string {
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return "menos de 1 min";
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const resto = min % 60;
+  return resto === 0 ? `${h} h` : `${h} h ${String(resto).padStart(2, "0")} min`;
+}
+
+/** "das 14:02 às 14:14", com a data quando o episódio atravessa a meia-noite no fuso de exibição. */
+function intervalo(de: Date, ate: Date, tz: string): string {
+  const dia = new Intl.DateTimeFormat("pt-BR", { timeZone: tz, day: "2-digit", month: "2-digit" });
+  const hora = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  return dia.format(de) === dia.format(ate)
+    ? `das ${hora.format(de)} às ${hora.format(ate)}`
+    : `de ${dia.format(de)} ${hora.format(de)} a ${dia.format(ate)} ${hora.format(ate)}`;
 }
 
 /**

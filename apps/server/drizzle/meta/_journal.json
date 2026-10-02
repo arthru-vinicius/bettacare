@@ -64,6 +64,13 @@
       "when": 1790916489498,
       "tag": "0008_componente_alimentador",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790918392491,
+      "tag": "0009_limpa_alimentador_fantasma",
+      "breakpoints": true
     }
   ]
 }

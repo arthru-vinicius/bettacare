@@ -92,13 +92,6 @@ export function createIngestRouter(rt: Runtime): Hono {
       return c.json({ ok: false, error: "invalid_body" }, 400);
     }
 
-    if (sanitized.corrections.length > 0) {
-      rt.log.warn(
-        { device: sanitized.data.device_id, corrections: sanitized.corrections },
-        "telemetria aceita com correções — ver eventos ingest.field_rejected/ingest.event_dropped",
-      );
-    }
-
     const now = new Date();
     try {
       const result = await processTelemetry(
@@ -108,6 +101,23 @@ export function createIngestRouter(rt: Runtime): Hono {
         now,
         sanitized.corrections,
       );
+
+      // `warn` só para a correção que abriu evento; a repetida, que só somou
+      // `repeat_count`, vai para `debug` — um campo errado em todo POST era
+      // um `warn` por segundo no log do homelab.
+      const repetidas = sanitized.corrections.filter((c) => !result.newCorrections.includes(c));
+      if (result.newCorrections.length > 0) {
+        rt.log.warn(
+          { device: sanitized.data.device_id, corrections: result.newCorrections },
+          "telemetria aceita com correções — ver eventos ingest.field_rejected/ingest.event_dropped",
+        );
+      }
+      if (repetidas.length > 0) {
+        rt.log.debug(
+          { device: sanitized.data.device_id, corrections: repetidas },
+          "correções repetidas, somadas ao evento já aberto",
+        );
+      }
 
       rt.log.debug(
         {

@@ -11,7 +11,7 @@ import {
   type TelemetryRequest,
   type TelemetryResponse,
 } from "@bettacare/contract";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 
 import type { AppConfig } from "../config.js";
 import type { PushMessage } from "../push/notify.js";
@@ -50,6 +50,12 @@ export interface ProcessResult {
    * ficar refém disso.
    */
   alerts: PushMessage[];
+  /**
+   * Correções que abriram evento neste POST. As repetidas só somaram
+   * `repeat_count` num evento já aberto, e o router as rebaixa a `debug` —
+   * senão o mesmo campo errado vira um `warn` por segundo no log do homelab.
+   */
+  newCorrections: TelemetryCorrection[];
 }
 
 /**
@@ -122,27 +128,30 @@ export async function processTelemetry(
     // Um campo saiu de faixa e foi corrigido no lugar de derrubar o corpo
     // inteiro (UPGRADE/05, C1). O diagnóstico honesto: algo está errado nesse
     // campo específico, não que o dispositivo sumiu.
+    const newCorrections: TelemetryCorrection[] = [];
     for (const c of corrections) {
-      await insertServerEvent(
-        tx,
-        body.device_id,
-        now,
-        c.action === "dropped"
-          ? {
-              sev: "warn",
-              comp: "api",
-              code: "ingest.event_dropped",
-              msg: `Item "${c.path}" descartado por campo inválido; o resto do envio foi aceito`,
-              ctx: { field: c.path, reason: c.message, received: c.received },
-            }
-          : {
-              sev: "warn",
-              comp: "api",
-              code: "ingest.field_rejected",
-              msg: `Campo "${c.path}" fora de faixa, corrigido para aceitar o resto do envio`,
-              ctx: { field: c.path, reason: c.message, received: c.received },
-            },
-      );
+      if (c.action === "dropped") {
+        // Cada item descartado é uma ocorrência distinta do firmware — um
+        // evento que teria sido gravado —, então um para um, sem agrupar.
+        await insertServerEvent(tx, body.device_id, now, {
+          sev: "warn",
+          comp: "api",
+          code: "ingest.event_dropped",
+          msg: `Item "${c.path}" descartado por campo inválido; o resto do envio foi aceito`,
+          ctx: { field: c.path, reason: c.message, received: c.received },
+        });
+        newCorrections.push(c);
+        continue;
+      }
+      if (await countRepeatedCorrection(tx, body.device_id, c.path, now)) continue;
+      await insertServerEvent(tx, body.device_id, now, {
+        sev: "warn",
+        comp: "api",
+        code: "ingest.field_rejected",
+        msg: `Campo "${c.path}" fora de faixa, corrigido para aceitar o resto do envio`,
+        ctx: { field: c.path, reason: c.message, received: c.received },
+      });
+      newCorrections.push(c);
     }
 
     const [previous] = await tx
@@ -278,11 +287,57 @@ export async function processTelemetry(
       ...(body.config_version === configVersion ? {} : { config }),
     };
 
-    return { response, duplicate, wroteHistory, alerts };
+    return { response, duplicate, wroteHistory, alerts, newCorrections };
   });
 }
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/**
+ * Por quanto tempo a mesma correção soma no evento já aberto em vez de abrir
+ * outro.
+ *
+ * Um campo que o firmware manda errado não erra uma vez: erra em todo POST,
+ * até alguém gravar outro firmware. Foi o caso do `feeder.grains_per_feeding`
+ * zerado da 2.0.0 — um evento por POST, 86 mil por dia com o intervalo de
+ * 1 s. Agrupado, vira no máximo 24 por dia por campo, e o `repeat_count` (o
+ * "×N" da aba Registros) ainda separa um pico isolado de ruído de um defeito
+ * que não para.
+ */
+const CORRECTION_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * Soma 1 ao `repeat_count` do `ingest.field_rejected` do mesmo campo aberto
+ * dentro da janela. Falso quando não há nenhum — aí a correção é notícia, e o
+ * evento novo é do chamador.
+ */
+async function countRepeatedCorrection(
+  tx: Tx,
+  deviceId: string,
+  field: string,
+  now: Date,
+): Promise<boolean> {
+  const [aberto] = await tx
+    .select({ receivedAt: events.receivedAt, id: events.id })
+    .from(events)
+    .where(
+      and(
+        eq(events.deviceId, deviceId),
+        eq(events.code, "ingest.field_rejected"),
+        gte(events.receivedAt, new Date(now.getTime() - CORRECTION_WINDOW_MS)),
+        sql`${events.ctx}->>'field' = ${field}`,
+      ),
+    )
+    .orderBy(desc(events.receivedAt))
+    .limit(1);
+  if (aberto === undefined) return false;
+
+  await tx
+    .update(events)
+    .set({ repeatCount: sql`${events.repeatCount} + 1` })
+    .where(and(eq(events.receivedAt, aberto.receivedAt), eq(events.id, aberto.id)));
+  return true;
+}
 
 /**
  * Aplica os `ack` do dispositivo.

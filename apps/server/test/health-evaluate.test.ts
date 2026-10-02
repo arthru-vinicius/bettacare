@@ -73,14 +73,18 @@ describe("saúde: button e pot (UPGRADE/04, S2)", () => {
     assert.equal(pot?.status, "ok");
   });
 
-  it("potenciômetro saturado no topo do curso vira degraded", () => {
-    const verdicts = evaluateHealth(
-      corpo({ diag: { pot_raw_adc: 4095, button_pressed: false, api_failures: 0 } }),
-      CTX_VAZIO,
-    );
-    const pot = verdicts.find((v) => v.comp === "pot");
-    assert.equal(pot?.status, "degraded");
-    assert.equal(pot?.code, "pot.out_of_range");
+  it("potenciômetro no fim do curso é posição, não defeito — o ADC satura em 4095", () => {
+    // Falso alarme da v1.1.0 em produção: `degraded` com o potenciômetro
+    // funcionando, só girado até o fim (UPGRADE/02, §8).
+    for (const adc of [0, 4095]) {
+      const verdicts = evaluateHealth(
+        corpo({ diag: { pot_raw_adc: adc, button_pressed: false, api_failures: 0 } }),
+        CTX_VAZIO,
+      );
+      const pot = verdicts.find((v) => v.comp === "pot");
+      assert.equal(pot?.status, "ok", `adc ${adc}`);
+      assert.deepEqual(pot?.detail, { adc });
+    }
   });
 
   it("botão pressionado por mais de 30 s vira degraded (preso)", () => {

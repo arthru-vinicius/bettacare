@@ -28,8 +28,6 @@ const WIFI_WEAK_RSSI = -80;
 const ANOMALY_TO_FAULT_MS = 5_000;
 /** O mesmo limiar que o firmware usa em `light_button_stuck()`. */
 const BUTTON_STUCK_MS = 30_000;
-/** Topo do curso do potenciômetro — ver UPGRADE/02 §8 sobre saturação do ADC do ESP32. */
-const POT_SATURATED_ADC = 4090;
 /**
  * Motivos de reset que indicam falha, não operação normal. `poweron` e `sw`
  * (reinício comandado) ficam de fora de propósito — são esperados.
@@ -262,18 +260,22 @@ function evaluateButton(t: TelemetryRequest, ctx: HealthContext): HealthVerdict 
 
 /**
  * `pot` era o exemplo citado em `docs/arquitetura-observabilidade.md` como
- * "hoje invisível" — e continuava sendo, porque nenhum evento avaliava a
- * leitura crua do ADC (UPGRADE/04, S2).
+ * "hoje invisível" (UPGRADE/04, S2): agora a aba Saúde mostra a leitura crua
+ * do ADC e o último sinal.
+ *
+ * Nenhum valor isolado é defeito. Até a v1.1.0 havia uma regra — "4090 ou
+ * mais é mau contato" — que disparava com o potenciômetro só girado até o
+ * fim: o ADC do ESP32 satura antes dos 3,3 V, e o topo do curso lê 4095 em
+ * qualquer montagem boa (UPGRADE/02, §8). Em produção, foi `degraded` com o
+ * potenciômetro funcionando — na véspera ele tinha ajustado a ventoinha 184
+ * vezes. O mínimo também é posição legítima: é como se desliga a ventoinha.
+ * Separar fio solto de fim de curso exige mudar a montagem (resistor em
+ * série nos extremos, §8), e aí sim a faixa morta vira regra.
  */
 function evaluatePot(t: TelemetryRequest): HealthVerdict | null {
   const adc = t.diag?.pot_raw_adc;
   if (adc === undefined || adc === null) return null;
-
-  const detail = { adc };
-  if (adc >= POT_SATURATED_ADC) {
-    return { comp: "pot", status: "degraded", code: "pot.out_of_range", detail };
-  }
-  return { comp: "pot", status: "ok", code: null, detail };
+  return { comp: "pot", status: "ok", code: null, detail: { adc } };
 }
 
 /**

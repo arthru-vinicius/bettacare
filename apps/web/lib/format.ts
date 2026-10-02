@@ -5,8 +5,46 @@
  * aparece aqui, e vem do navegador do usuário, que é quem sabe onde ele está.
  */
 
+/** `26,5` — vírgula decimal, como se escreve em português. */
 export function formatTemp(c: number | null | undefined): string {
-  return c === null || c === undefined ? "—" : c.toFixed(1);
+  return c === null || c === undefined ? "—" : c.toFixed(1).replace(".", ",");
+}
+
+/** `1.420` — milhar com ponto. */
+export function formatInt(n: number | null | undefined): string {
+  return n === null || n === undefined ? "—" : n.toLocaleString("pt-BR");
+}
+
+/** `22:15:03`. */
+export function formatClock(iso: string): string {
+  return new Date(iso).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+/** Chave do dia no fuso do navegador, para agrupar a lista de registros. */
+export function dayKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+/** "Hoje", "Ontem" ou "terça, 30 de setembro". */
+export function formatDayHeader(iso: string): string {
+  const d = new Date(iso);
+  const hoje = new Date();
+  const ontem = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1);
+  if (d.toDateString() === hoje.toDateString()) return "Hoje";
+  if (d.toDateString() === ontem.toDateString()) return "Ontem";
+  return d.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+}
+
+/** Segundos do intervalo de telemetria, para frases como "a cada 1 s". */
+export function formatInterval(ms: number | null | undefined): string {
+  if (!ms) return "alguns segundos";
+  const s = ms / 1000;
+  return `${s.toLocaleString("pt-BR")} ${s === 1 ? "segundo" : "segundos"}`;
 }
 
 export function formatTime(iso: string | null | undefined): string {

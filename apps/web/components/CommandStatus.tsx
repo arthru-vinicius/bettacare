@@ -1,5 +1,6 @@
 "use client";
 
+import { formatInterval } from "@/lib/format";
 import type { CommandFeedback } from "@/lib/useDevice";
 
 /**
@@ -9,17 +10,24 @@ import type { CommandFeedback } from "@/lib/useDevice";
  * acendeu quando eu apertei o botão?* O botão não volta ao normal sozinho —
  * ele passa por enviando → confirmado, ou enviando → falhou com a razão.
  */
-export function CommandStatus({ feedback }: { feedback: CommandFeedback | null }) {
+export function CommandStatus({
+  feedback,
+  intervalMs,
+}: {
+  feedback: CommandFeedback | null;
+  /** Intervalo de telemetria configurado — é o tempo máximo até o aquário buscar o comando. */
+  intervalMs?: number | undefined;
+}) {
   if (feedback === null) return null;
 
   if (feedback.status === "pending") {
     return (
-      <div className="cmd-status pending">
+      <div className="cmd-status pending" role="status" aria-live="polite">
         <span className="spinner-sm" />
         <span>
-          Enviando ao dispositivo…
+          Enviando ao aquário…
           <span className="cmd-status-hint">
-            Ele busca a fila a cada 3 segundos.
+            Ele busca os comandos a cada {formatInterval(intervalMs)}.
           </span>
         </span>
       </div>
@@ -28,15 +36,15 @@ export function CommandStatus({ feedback }: { feedback: CommandFeedback | null }
 
   if (feedback.status === "ok") {
     return (
-      <div className="cmd-status ok">
+      <div className="cmd-status ok" role="status" aria-live="polite">
         <span aria-hidden>✓</span>
-        <span>Confirmado pelo dispositivo</span>
+        <span>Confirmado pelo aquário</span>
       </div>
     );
   }
 
   return (
-    <div className="cmd-status fail">
+    <div className="cmd-status fail" role="status" aria-live="polite">
       <span aria-hidden>✕</span>
       <span>
         {feedback.reason}

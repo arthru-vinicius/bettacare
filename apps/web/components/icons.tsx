@@ -29,3 +29,47 @@ export const IconRefresh = () => (
     <path d="M17.65 6.35A7.96 7.96 0 0012 4a8 8 0 00-8 8 8 8 0 008 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18a6 6 0 01-6-6 6 6 0 016-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
   </svg>
 );
+
+/** Seta de "abre mais" — marca o que é tocável sem precisar de texto. */
+export const IconChevron = () => (
+  <svg viewBox="0 0 24 24" aria-hidden>
+    <path d="M9.29 6.71a1 1 0 000 1.41L13.17 12l-3.88 3.88a1 1 0 101.42 1.41l4.59-4.58a1 1 0 000-1.42L10.71 6.7a1 1 0 00-1.42.01z" />
+  </svg>
+);
+
+export const IconPencil = () => (
+  <svg viewBox="0 0 24 24" aria-hidden>
+    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm17.71-10.21a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
+  </svg>
+);
+
+export const IconDownload = () => (
+  <svg viewBox="0 0 24 24" aria-hidden>
+    <path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z" />
+  </svg>
+);
+
+export const IconThermo = () => (
+  <svg viewBox="0 0 24 24" aria-hidden>
+    <path d="M15 13V5a3 3 0 00-6 0v8a5 5 0 106 0zm-3-9a1 1 0 011 1v3h-2V5a1 1 0 011-1z" />
+  </svg>
+);
+
+export const IconPower = () => (
+  <svg viewBox="0 0 24 24" aria-hidden>
+    <path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42A6.92 6.92 0 0119 12a7 7 0 11-11.42-5.42L6.17 5.17A8.93 8.93 0 003 12a9 9 0 0018 0 8.93 8.93 0 00-3.17-6.83z" />
+  </svg>
+);
+
+export const IconAuto = () => (
+  <svg viewBox="0 0 24 24" aria-hidden>
+    <path d="M12 6v3l4-4-4-4v3a8 8 0 00-6.76 12.26l1.46-1.46A5.9 5.9 0 016 12a6 6 0 016-6zm6.76 1.74L17.3 9.2A5.9 5.9 0 0118 12a6 6 0 01-6 6v-3l-4 4 4 4v-3a8 8 0 006.76-12.26z" />
+  </svg>
+);
+
+/** Novo, não portado do app antigo — o alimentador não existia lá. */
+export const IconFeeder = () => (
+  <svg viewBox="0 0 24 24" aria-hidden>
+    <path d="M13 5c-4.5 0-8.3 2.9-9.7 7 1.4 4.1 5.2 7 9.7 7 2.3 0 4.4-.8 6.1-2.1L21 19v-3l-2.3-2 2.3-2V9l-1.9 2.1C17.4 5.8 15.3 5 13 5zm3.2 6.3a1.3 1.3 0 11-2.6 0 1.3 1.3 0 012.6 0z" />
+  </svg>
+);

@@ -2,20 +2,27 @@
 
 import { useState } from "react";
 
+import { AlertaGrave } from "@/components/AlertaGrave";
 import { Carregando } from "@/components/Carregando";
-import { IconBulb, IconChart, IconFan, IconHome, IconRefresh } from "@/components/icons";
+import { IconBulb, IconChart, IconFan, IconFeeder, IconHome, IconRefresh } from "@/components/icons";
 import { Fan } from "@/components/screens/Fan";
+import { Feeder } from "@/components/screens/Feeder";
 import { Health } from "@/components/screens/Health";
 import { Home } from "@/components/screens/Home";
 import { Light } from "@/components/screens/Light";
 import { Logs } from "@/components/screens/Logs";
-import { Report } from "@/components/screens/Report";
 import { formatTime } from "@/lib/format";
 import { useAppUpdate } from "@/lib/useAppUpdate";
 import { useDevice } from "@/lib/useDevice";
 
-type Aba = "inicio" | "luminaria" | "ventoinha" | "diagnostico";
-type SubAba = "saude" | "logs" | "relatorios";
+type Aba = "inicio" | "luminaria" | "ventoinha" | "alimentador" | "diagnostico";
+/**
+ * Duas, não três: Logs e Relatórios respondiam a mesma pergunta ("o que
+ * aconteceu nesse período?") em telas separadas, e Relatórios não deixava
+ * levar nada embora. Agora é "Registros", com a planilha no mesmo lugar. O
+ * gráfico de temperatura foi para a tela da ventoinha, junto da temperatura.
+ */
+type SubAba = "saude" | "registros";
 
 /**
  * O casco do app.
@@ -28,8 +35,20 @@ export default function Page() {
   const [aba, setAba] = useState<Aba>("inicio");
   const [subAba, setSubAba] = useState<SubAba>("saude");
 
-  const { data, error, deviceMissing, loading, refreshing, feedback, refresh, send } =
-    useDevice();
+  const {
+    data,
+    error,
+    deviceMissing,
+    loading,
+    refreshing,
+    feedback,
+    refresh,
+    send,
+    runDiagnostic,
+    diagnosticRunning,
+    saveSettings,
+    settingsFeedback,
+  } = useDevice();
   const update = useAppUpdate();
 
   const grave = data?.overall === "critical" || data?.overall === "offline";
@@ -42,6 +61,8 @@ export default function Page() {
 
   return (
     <div className="app">
+      <AlertaGrave data={data} />
+
       {update.available ? (
         <div className="banner update">
           <span>Nova versão disponível</span>
@@ -100,19 +121,33 @@ export default function Page() {
           <Home
             data={data}
             deviceMissing={deviceMissing}
-            onOpenReport={() => {
-              setAba("diagnostico");
-              setSubAba("relatorios");
-            }}
+            onOpenFan={() => setAba("ventoinha")}
+            onOpenLight={() => setAba("luminaria")}
           />
         </section>
 
         <section className={`screen ${aba === "luminaria" ? "active" : ""}`}>
-          <Light data={data} feedback={feedback} onSend={send} />
+          <Light
+            data={data}
+            feedback={feedback}
+            onSend={send}
+            settingsFeedback={settingsFeedback}
+            onSaveSettings={saveSettings}
+          />
         </section>
 
         <section className={`screen ${aba === "ventoinha" ? "active" : ""}`}>
-          <Fan data={data} feedback={feedback} onSend={send} />
+          <Fan
+            data={data}
+            feedback={feedback}
+            onSend={send}
+            settingsFeedback={settingsFeedback}
+            onSaveSettings={saveSettings}
+          />
+        </section>
+
+        <section className={`screen ${aba === "alimentador" ? "active" : ""}`}>
+          <Feeder data={data} feedback={feedback} onSend={send} />
         </section>
 
         <section className={`screen ${aba === "diagnostico" ? "active" : ""}`}>
@@ -120,8 +155,7 @@ export default function Page() {
             {(
               [
                 ["saude", "Saúde"],
-                ["logs", "Logs"],
-                ["relatorios", "Relatórios"],
+                ["registros", "Registros"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -135,13 +169,20 @@ export default function Page() {
           </div>
 
           {/*
-            Montagem condicional, não CSS: as sub-abas de Logs e Relatórios
-            fazem as próprias requisições, e mantê-las montadas as faria buscar
-            dados que ninguém está olhando.
+            Montagem condicional, não CSS: Registros faz as próprias
+            requisições, e mantê-la montada a faria buscar dados que ninguém
+            está olhando.
           */}
-          {subAba === "saude" ? <Health data={data} /> : null}
-          {subAba === "logs" ? <Logs /> : null}
-          {subAba === "relatorios" ? <Report /> : null}
+          {subAba === "saude" ? (
+            <Health
+              data={data}
+              onRunDiagnostic={() => void runDiagnostic()}
+              diagnosticRunning={diagnosticRunning}
+              settingsFeedback={settingsFeedback}
+              onSaveSettings={saveSettings}
+            />
+          ) : null}
+          {subAba === "registros" ? <Logs /> : null}
         </section>
       </div>
 
@@ -162,6 +203,13 @@ export default function Page() {
           label="Ventoinha"
         >
           <IconFan />
+        </NavBtn>
+        <NavBtn
+          ativo={aba === "alimentador"}
+          onClick={() => setAba("alimentador")}
+          label="Alimentador"
+        >
+          <IconFeeder />
         </NavBtn>
         <NavBtn
           ativo={aba === "diagnostico"}

@@ -138,3 +138,60 @@ self.addEventListener("fetch", (event) => {
     }),
   );
 });
+
+/*
+ * Notificações push.
+ *
+ * O alerta chega pelo push service do próprio navegador (FCM no Android, WNS
+ * no Windows) e é entregue **mesmo com o PWA fechado** — é o que diferencia um
+ * alerta de verdade de um aviso que só aparece quando alguém já está olhando.
+ */
+self.addEventListener("push", (event) => {
+  let dados = { title: "BettaCare", body: "Há um alerta no aquário.", tag: "geral" };
+  try {
+    if (event.data) dados = { ...dados, ...event.data.json() };
+  } catch {
+    // Payload ilegível não pode engolir a notificação: melhor um aviso
+    // genérico do que silêncio, porque o silêncio é indistinguível de "está
+    // tudo bem".
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(dados.title, {
+      body: dados.body,
+      // `tag` agrupa: um alerta novo do mesmo componente substitui o anterior
+      // em vez de empilhar dez avisos da mesma ventoinha.
+      tag: dados.tag,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      requireInteraction: dados.requireInteraction === true,
+      renotify: true,
+    }),
+  );
+});
+
+/*
+ * Tocar na notificação abre o app — reaproveitando a aba já aberta, se houver.
+ * Abrir uma segunda janela do mesmo PWA seria confuso e perderia o estado.
+ */
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+
+  event.waitUntil(
+    (async () => {
+      const abertas = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+
+      for (const cliente of abertas) {
+        if (new URL(cliente.url).origin === self.location.origin) {
+          await cliente.focus();
+          return;
+        }
+      }
+
+      await self.clients.openWindow("/");
+    })(),
+  );
+});

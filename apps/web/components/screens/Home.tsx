@@ -3,22 +3,26 @@
 import type { OverviewResponse } from "@bettacare/contract";
 import { useEffect, useState } from "react";
 
-import { formatTemp, timeAgo } from "@/lib/format";
+import { formatInt, formatTemp, timeAgo } from "@/lib/format";
 
 /**
- * Tela inicial.
+ * Tela inicial — o resumo, e o atalho para cada coisa.
  *
- * O card de temperatura é tocável e leva ao histórico — foi a escolha para
- * manter o app com quatro abas em vez de cinco, sem esconder os relatórios.
+ * Tudo que tem tela própria aqui é tocável e leva até ela: a temperatura vai
+ * para a ventoinha (onde ficam os limites e o histórico), e os dois cartões
+ * para as telas deles. Quem abre o app quer saber "está tudo bem?" e, se
+ * não estiver, chegar no lugar certo com um toque.
  */
 export function Home({
   data,
   deviceMissing,
-  onOpenReport,
+  onOpenFan,
+  onOpenLight,
 }: {
   data: OverviewResponse | null;
   deviceMissing: boolean;
-  onOpenReport: () => void;
+  onOpenFan: () => void;
+  onOpenLight: () => void;
 }) {
   const relogio = useLocalClock();
   const s = data?.state ?? null;
@@ -26,8 +30,8 @@ export function Home({
 
   return (
     <>
-      <button className="temp-hero" onClick={onOpenReport}>
-        <div className="temp-hero-lbl">Temperatura</div>
+      <button className="temp-hero" onClick={onOpenFan}>
+        <div className="temp-hero-lbl">Temperatura da água</div>
         <div>
           <span className="temp-hero-num">
             {formatTemp(s?.temperature.celsius)}
@@ -39,31 +43,40 @@ export function Home({
         <div className="temp-hero-hint">
           {s?.temperature.available === false
             ? "Sensor não reconhecido"
-            : "Toque para ver o histórico"}
+            : "Toque para ver o histórico e os limites"}
         </div>
       </button>
 
       <div className="grid-2">
-        <div className="card">
+        <button className="card card-toque" onClick={onOpenLight}>
           <div className="c-label">Luminária</div>
           <span className={`pill ${s?.light.on ? "amber" : "off"}`}>
             <span className="pill-dot" />
             {s?.light.on ? "ACESA" : "APAGADA"}
           </span>
-        </div>
+          {data?.config ? (
+            <div className="c-sub">
+              {data.config.light_on_time}–{data.config.light_off_time}
+            </div>
+          ) : null}
+        </button>
 
-        <div className="card">
+        <button className="card card-toque" onClick={onOpenFan}>
           <div className="c-label">Ventoinha</div>
           <span className={`pill ${s?.fan.on ? "on" : "off"}`}>
             <span className="pill-dot" />
             {s?.fan.on ? "LIGADA" : "DESLIGADA"}
           </span>
-          {s?.fan.on ? (
+          {s ? (
             <div className="c-sub">
-              {s.fan.speed_percent}% · {s.fan.rpm} rpm
+              {s.fan.on
+                ? `${s.fan.speed_percent}% · ${formatInt(s.fan.rpm)} rpm`
+                : s.fan.mode === "auto" || s.fan.mode === "failsafe"
+                  ? "no automático"
+                  : "no manual"}
             </div>
           ) : null}
-        </div>
+        </button>
       </div>
 
       <div className="clock-card">

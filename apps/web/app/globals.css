@@ -907,39 +907,187 @@ input[type="range"]:disabled::-webkit-slider-thumb {
   margin: 4px 0 12px;
 }
 
-/* ── Logs ───────────────────────────────────────────────────────────────── */
+/* ── Controle segmentado ─────────────────────────────────────────────────
+ *
+ * Escolha única entre poucas opções (período, nível, intervalo): todas à
+ * vista, uma marcada. Substitui os chips soltos, que pareciam filtros
+ * acumuláveis e não eram.
+ */
 
-.chips {
+.segmentado {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
+  gap: 3px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  padding: 3px;
 }
 
-.chip {
-  padding: 6px 12px;
-  border-radius: 99px;
-  font-size: 0.72rem;
+.segmentado button {
+  flex: 1;
+  min-height: 36px;
+  padding: 6px 4px;
+  border-radius: 7px;
+  font-size: 0.74rem;
   font-weight: 600;
+  white-space: nowrap;
   color: var(--c-text-2);
-  background: var(--c-card);
-  border: 1px solid var(--c-border);
   transition:
     background 0.16s,
-    color 0.16s,
-    border-color 0.16s;
+    color 0.16s;
 }
 
-.chip.active {
-  background: rgba(76, 195, 247, 0.13);
-  border-color: rgba(76, 195, 247, 0.35);
+.segmentado button.ativo {
+  background: rgba(76, 195, 247, 0.15);
   color: var(--c-accent);
 }
 
-.chip.danger.active {
+.segmentado button.perigo.ativo {
   background: var(--c-danger-dim);
-  border-color: rgba(232, 64, 64, 0.35);
   color: #ff8080;
+}
+
+.segmentado button:disabled {
+  opacity: 0.45;
+}
+
+.segmentado.pequeno button {
+  min-height: 30px;
+  padding: 4px 9px;
+  font-size: 0.68rem;
+}
+
+/* ── Registros ──────────────────────────────────────────────────────────── */
+
+.filtros {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.filtros-mais {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 36px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--c-text-2);
+}
+
+.filtros-mais svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  transform: rotate(90deg);
+  transition: transform 0.18s;
+}
+
+.filtros-mais.aberto svg {
+  transform: rotate(-90deg);
+}
+
+.filtros-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filtros-extras .select-row {
+  margin-bottom: 0;
+}
+
+.busca {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  border-radius: var(--r-sm);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  color: var(--c-text-1);
+  font-size: 0.82rem;
+  font-family: inherit;
+}
+
+.busca::placeholder {
+  color: var(--c-text-3);
+}
+
+.exportar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.exportar-texto {
+  flex: 1 1 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.72rem;
+  color: var(--c-text-2);
+  line-height: 1.4;
+}
+
+.exportar-texto strong {
+  font-size: 0.82rem;
+  color: var(--c-text-1);
+}
+
+.exportar-botoes {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-exportar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(76, 195, 247, 0.35);
+  background: rgba(76, 195, 247, 0.12);
+  color: var(--c-accent);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.btn-exportar svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.btn-exportar.desabilitado {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.log-dia {
+  margin-bottom: 14px;
+}
+
+.log-dia-titulo {
+  position: sticky;
+  top: -18px;
+  z-index: 1;
+  padding: 8px 2px 6px;
+  background: var(--c-bg);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--c-text-2);
 }
 
 .select-row {
@@ -959,87 +1107,181 @@ input[type="range"]:disabled::-webkit-slider-thumb {
   font-family: inherit;
 }
 
-.log-entry {
+/* Autodiagnóstico sob demanda — aba Saúde. */
+.diag-actions {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  padding: 12px 13px;
+  margin-bottom: 8px;
+}
+
+.btn-diag {
+  width: 100%;
+  padding: 11px;
+  border: 1px solid rgba(76, 195, 247, 0.35);
+  border-radius: var(--r-sm);
+  background: rgba(76, 195, 247, 0.13);
+  color: var(--c-accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: inherit;
+  margin-bottom: 8px;
+}
+
+.btn-diag:disabled {
+  opacity: 0.45;
+  border-color: var(--c-border);
+  background: transparent;
+  color: var(--c-text-3);
+}
+
+/* Marca o check que foi só observado, não sondado — ver diagnostics.h. */
+.diag-passive {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 99px;
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--c-text-3);
+  border: 1px solid var(--c-border);
+}
+
+.log-item {
   background: var(--c-card);
   border: 1px solid var(--c-border);
   border-left-width: 3px;
   border-radius: var(--r-sm);
-  padding: 10px 13px;
   margin-bottom: 7px;
 }
 
-.log-entry.debug,
-.log-entry.info {
+.log-item.debug,
+.log-item.info {
   border-left-color: var(--c-border);
 }
-.log-entry.warn {
+.log-item.warn {
   border-left-color: var(--c-amber);
 }
-.log-entry.error,
-.log-entry.fatal {
+.log-item.error,
+.log-item.fatal {
   border-left-color: var(--c-danger);
 }
 
-.log-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 3px;
+.log-cabeca {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 13px;
 }
 
-.log-ts {
+.log-linha1 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+}
+
+.log-hora {
   font-size: 0.7rem;
-  color: var(--c-accent);
+  color: var(--c-text-2);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
-.log-comp {
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  color: var(--c-text-3);
-}
-
-.log-source {
+.log-nivel {
   font-size: 0.6rem;
   font-weight: 700;
-  padding: 1px 6px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 1px 7px;
   border-radius: 99px;
   background: rgba(52, 79, 112, 0.35);
-  color: var(--c-text-3);
-  margin-left: auto;
+  color: var(--c-text-2);
   flex-shrink: 0;
 }
 
-.log-label {
-  font-size: 0.82rem;
+.log-nivel.warn {
+  background: var(--c-amber-dim);
+  color: var(--c-amber);
+}
+
+.log-nivel.error,
+.log-nivel.fatal {
+  background: var(--c-danger-dim);
+  color: #ff8080;
+}
+
+.log-equip {
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--c-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.log-titulo {
+  display: block;
+  font-size: 0.84rem;
   color: var(--c-text-1);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .log-msg {
+  display: block;
   font-size: 0.72rem;
   color: var(--c-text-2);
   margin-top: 3px;
   word-break: break-word;
+  line-height: 1.4;
 }
 
 .log-repeat {
   font-size: 0.66rem;
   font-weight: 700;
   color: var(--c-amber);
-  margin-left: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .log-hint {
+  display: block;
   font-size: 0.72rem;
   color: #f0c98a;
   margin-top: 6px;
   padding-left: 10px;
   border-left: 2px solid rgba(245, 166, 35, 0.35);
   line-height: 1.45;
+}
+
+.log-detalhes {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 12px;
+  margin: 0 13px 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--c-border);
+  font-size: 0.72rem;
+  user-select: text;
+}
+
+.log-detalhes dt {
+  color: var(--c-text-3);
+  font-weight: 600;
+}
+
+.log-detalhes dd {
+  color: var(--c-text-2);
+  min-width: 0;
+  word-break: break-word;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
 }
 
 /* ── Relatórios ─────────────────────────────────────────────────────────── */
@@ -1190,4 +1432,629 @@ input[type="range"]:disabled::-webkit-slider-thumb {
   .splash-arte {
     animation: none;
   }
+}
+
+/* ── Modal de alerta grave ────────────────────────────────────────────────── */
+
+.modal-fundo {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  /* Respeita o notch/barra de gestos quando instalado. */
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
+  animation: modal-entra 0.16s ease-out;
+}
+
+@keyframes modal-entra {
+  from {
+    opacity: 0;
+  }
+}
+
+.modal {
+  width: 100%;
+  max-width: 400px;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--c-card);
+  border: 1px solid var(--c-danger);
+  border-radius: var(--r-lg, 16px);
+  padding: 22px 20px 18px;
+  text-align: center;
+}
+
+.modal-icone {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  background: var(--c-danger-dim);
+  border: 1px solid var(--c-danger);
+  color: #ff8080;
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 42px;
+}
+
+.modal-titulo {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--c-text-1);
+}
+
+.modal-texto {
+  margin: 0 0 14px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--c-text-2);
+}
+
+.modal-item {
+  text-align: left;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.modal-item-nome {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--c-text-1);
+  flex-wrap: wrap;
+}
+
+.modal-item-status {
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--c-text-3);
+}
+
+.modal-item-dica {
+  margin-top: 6px;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--c-text-2);
+}
+
+.modal-btn {
+  width: 100%;
+  margin-top: 6px;
+  padding: 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--c-danger);
+  color: #fff;
+  font-size: 0.86rem;
+  font-weight: 700;
+  font-family: inherit;
+}
+
+.modal-rodape {
+  margin-top: 10px;
+  font-size: 0.72rem;
+  color: var(--c-text-3);
+}
+
+/* ── Notificações push ────────────────────────────────────────────────────── */
+
+.push-card {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  padding: 12px 13px;
+  margin-bottom: 8px;
+}
+
+.push-linha {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.push-btn {
+  padding: 9px 14px;
+  border: 1px solid rgba(76, 195, 247, 0.35);
+  border-radius: var(--r-sm);
+  background: rgba(76, 195, 247, 0.13);
+  color: var(--c-accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-family: inherit;
+}
+
+.push-btn.secundario {
+  border-color: var(--c-border);
+  background: transparent;
+  color: var(--c-text-2);
+}
+
+/* ── Alimentador ────────────────────────────────────────────────────────── */
+/* Sem cor própria de propósito — reaproveita o acento ciano, já usado como
+   "informativo/neutro" no diagnóstico, em vez de crescer a paleta por uma
+   tela só. */
+
+.state-hero.feeder-on {
+  border-color: rgba(76, 195, 247, 0.32);
+  background: linear-gradient(160deg, #001a28, #0d1526);
+}
+
+.feeder-on .hero-icon {
+  color: var(--c-accent);
+  background: rgba(76, 195, 247, 0.09);
+  box-shadow: 0 0 22px rgba(76, 195, 247, 0.14);
+}
+
+.feeder-on .hero-state {
+  color: var(--c-accent);
+}
+
+.btn-feeder {
+  background: linear-gradient(90deg, #00212e, #001520);
+  color: var(--c-accent);
+  border: 1px solid rgba(76, 195, 247, 0.2);
+}
+
+.btn-feeder.secondary {
+  background: transparent;
+  color: var(--c-text-2);
+  border: 1px solid var(--c-border);
+  margin-bottom: 10px;
+}
+
+/* Estado "nunca detectado" — não é erro, é o normal de um acessório opcional. */
+.feeder-empty {
+  background: var(--c-card);
+  border: 1px dashed var(--c-border);
+  border-radius: var(--r-lg);
+  padding: 40px 24px;
+  text-align: center;
+}
+
+.feeder-empty .hero-icon {
+  color: var(--c-text-3);
+  margin: 0 auto 14px;
+}
+
+.feeder-empty-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--c-text-2);
+  margin-bottom: 8px;
+}
+
+.feeder-empty-sub {
+  font-size: 0.78rem;
+  color: var(--c-text-3);
+  line-height: 1.5;
+  max-width: 32ch;
+  margin: 0 auto;
+}
+
+/* Stepper numérico — hora das refeições e grãos por refeição */
+
+.num-field {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.num-field button {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--c-off);
+  color: var(--c-text-1);
+  font-size: 1.1rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.num-field button:disabled {
+  opacity: 0.35;
+}
+
+.num-field-val {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--c-text-1);
+  font-variant-numeric: tabular-nums;
+  min-width: 2.6ch;
+  text-align: center;
+}
+
+/* Interruptor — alimentação automática ligada/desligada */
+
+.toggle {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  border-radius: 99px;
+  background: var(--c-off);
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.toggle.on {
+  background: var(--c-on);
+}
+
+.toggle:disabled {
+  opacity: 0.4;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+
+.toggle.on .toggle-thumb {
+  transform: translateX(20px);
+}
+
+/* ── Cartões tocáveis ─────────────────────────────────────────────────────
+ *
+ * Tudo que abre algo tem de parecer tocável sem precisar de instrução: borda
+ * que reage ao toque e, quando abre um editor, o lápis com "Ajustar". Antes
+ * os horários e a temperatura pareciam só leitura — e a pessoa não
+ * descobria que dava para mudar.
+ */
+
+.card-toque {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 12px;
+  transition:
+    border-color 0.16s,
+    transform 0.12s;
+}
+
+.card-toque:active:not(:disabled) {
+  transform: scale(0.985);
+  border-color: rgba(76, 195, 247, 0.4);
+}
+
+.card-toque:disabled {
+  cursor: default;
+}
+
+.grid-2 .card-toque {
+  margin-bottom: 0;
+}
+
+.c-unidade {
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: var(--c-text-2);
+}
+
+.toque-dica {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 7px 11px;
+  border-radius: 99px;
+  border: 1px solid rgba(76, 195, 247, 0.3);
+  background: rgba(76, 195, 247, 0.08);
+  color: var(--c-accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.toque-dica svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+/* Horário da luminária: as duas colunas são botões que abrem o editor. */
+.sched-editavel {
+  position: relative;
+  padding: 6px 8px;
+}
+
+.sched-editavel .sched-col {
+  padding: 10px 6px;
+  border-radius: var(--r-sm);
+  transition: background 0.16s;
+}
+
+.sched-editavel .sched-col:active:not(:disabled) {
+  background: rgba(245, 166, 35, 0.08);
+}
+
+.sched-editar {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  color: var(--c-amber);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.sched-editar svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+
+/* ── Controles da ventoinha ───────────────────────────────────────────── */
+
+.slider-card.controle input[type="range"] {
+  margin-bottom: 16px;
+}
+
+.botoes-coluna {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Desligar é ação de "apagar": neutra, sem o verde de "ligar". */
+.btn-desligar {
+  background: rgba(37, 58, 82, 0.45);
+  color: var(--c-text-1);
+  border: 1px solid var(--c-border);
+}
+
+.btn-secundario {
+  background: transparent;
+  color: var(--c-text-2);
+  border: 1px solid var(--c-border);
+  padding-top: 12px;
+  padding-bottom: 12px;
+  font-size: 0.82rem;
+}
+
+.btn-secundario:not(:disabled) {
+  color: var(--c-accent);
+  border-color: rgba(76, 195, 247, 0.35);
+}
+
+.controle-ajuda {
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: var(--c-text-3);
+  margin-top: 10px;
+}
+
+/* ── Folha de ajuste (sheet) ──────────────────────────────────────────── */
+
+.sheet-fundo {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: modal-entra 0.16s ease-out;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 480px;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-bottom: none;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  padding: 10px 18px calc(16px + env(safe-area-inset-bottom, 0px));
+  animation: sheet-sobe 0.2s ease-out;
+  outline: none;
+}
+
+@keyframes sheet-sobe {
+  from {
+    transform: translateY(24px);
+    opacity: 0.6;
+  }
+}
+
+.sheet-alca {
+  width: 38px;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--c-border);
+  margin: 0 auto 14px;
+}
+
+.sheet-titulo {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--c-text-1);
+}
+
+.sheet-sub {
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--c-text-2);
+  margin-top: 6px;
+}
+
+.sheet-corpo {
+  margin: 18px 0;
+}
+
+.sheet-rodape {
+  display: flex;
+  gap: 10px;
+}
+
+.sheet-btn {
+  flex: 1;
+  min-height: 48px;
+  border-radius: var(--r-sm);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.sheet-btn:disabled {
+  opacity: 0.4;
+}
+
+.sheet-btn.secundario {
+  flex: 0 0 auto;
+  padding: 0 18px;
+  border: 1px solid var(--c-border);
+  color: var(--c-text-2);
+}
+
+.sheet-btn.primario {
+  background: var(--c-on);
+  color: #03201a;
+}
+
+.sheet-btn.primario.amber {
+  background: var(--c-amber);
+  color: #2a1700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .sheet-fundo {
+    animation: none;
+  }
+}
+
+/* ── Campos de formulário ─────────────────────────────────────────────── */
+
+.campo-par {
+  display: flex;
+  gap: 10px;
+}
+
+.campo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.campo-rotulo {
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--c-text-2);
+}
+
+.campo input[type="time"],
+.campo input[type="date"] {
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  color: var(--c-text-1);
+  font-size: 1.15rem;
+  font-weight: 600;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  color-scheme: dark;
+}
+
+.campo input[type="date"] {
+  font-size: 0.9rem;
+}
+
+.campo-resumo {
+  margin-top: 14px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--c-text-2);
+}
+
+.campo-resumo strong {
+  color: var(--c-text-1);
+}
+
+.campo-erro {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--c-danger-dim);
+  border: 1px solid rgba(232, 64, 64, 0.28);
+  color: #ff9a9a;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.limite {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.limite:last-of-type {
+  border-bottom: none;
+}
+
+.limite-ajuda {
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: var(--c-text-3);
+  margin-top: 4px;
+}
+
+.limite .num-field button {
+  width: 40px;
+  height: 40px;
+}
+
+.limite-val {
+  min-width: 4.2ch;
+}
+
+/* ── Foco visível ─────────────────────────────────────────────────────────
+ *
+ * Quem navega por teclado (ou leitor de tela) precisa ver onde está. Só no
+ * `:focus-visible`: o toque não deixa contorno pendurado.
+ */
+
+.card-toque:focus-visible,
+.sched-col:focus-visible,
+.segmentado button:focus-visible,
+.sheet-btn:focus-visible,
+.btn:focus-visible,
+.btn-exportar:focus-visible,
+.log-cabeca:focus-visible,
+.filtros-mais:focus-visible,
+.temp-hero:focus-visible,
+.nav-btn:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
 }

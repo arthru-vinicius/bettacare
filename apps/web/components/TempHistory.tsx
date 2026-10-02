@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReportPoint } from "@bettacare/contract";
+import { TEMP_USUAL_C, type ReportPoint } from "@bettacare/contract";
 import { useEffect, useState } from "react";
 
 import { fetchReport } from "@/lib/api";
@@ -12,7 +12,8 @@ import { formatDuration, formatTemp } from "@/lib/format";
  * nasce. A planilha completa fica na aba Registros.
  *
  * Alimentado por `telemetry_hourly`, agregado a cada hora cheia: o gráfico
- * vai até a última hora fechada.
+ * vai até a última hora fechada. O rollup só agrega a faixa habitual da água
+ * (`TEMP_USUAL_C`); o que sai dela é aviso nos Registros, não ponto no gráfico.
  *
  * O gráfico é SVG escrito à mão. Uma biblioteca de charts custaria mais em
  * bundle do que estas linhas, para desenhar uma faixa e uma linha.
@@ -81,6 +82,10 @@ export function TempHistory() {
       {comTemp.length > 1 ? (
         <>
           <TempChart pontos={comTemp} />
+          <div className="chart-nota">
+            Faixa habitual, {TEMP_USUAL_C.min}–{TEMP_USUAL_C.max} °C. O que ficou fora
+            aparece em Registros, como aviso, com quanto tempo durou.
+          </div>
           <div className="stat-grid">
             <div className="stat">
               <div className="stat-val">{formatTemp(tMin)}</div>

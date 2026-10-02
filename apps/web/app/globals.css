@@ -1310,6 +1310,13 @@ input[type="range"]:disabled::-webkit-slider-thumb {
   overflow: visible;
 }
 
+.chart-nota {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--c-text-3);
+}
+
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

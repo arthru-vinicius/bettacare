@@ -1,10 +1,15 @@
 "use client";
 
-import type { CommandAction, OverviewResponse } from "@bettacare/contract";
+import {
+  FEEDER_MEALS_PER_24H,
+  type CommandAction,
+  type OverviewResponse,
+} from "@bettacare/contract";
 import { useEffect, useState } from "react";
 
 import { CommandStatus } from "@/components/CommandStatus";
 import { IconFeeder } from "@/components/icons";
+import { Sheet } from "@/components/Sheet";
 import { secondsAgo } from "@/lib/format";
 import type { CommandFeedback } from "@/lib/useDevice";
 
@@ -53,6 +58,7 @@ export function Feeder({
   // Mesmo padrão do slider da ventoinha (`arrastando`): enquanto há edição
   // local não confirmada, o polling não pode puxar o formulário de volta.
   const [local, setLocal] = useState(false);
+  const [confirmarLimite, setConfirmarLimite] = useState(false);
   const [form, setForm] = useState<FormState>(FACTORY_DEFAULT);
 
   useEffect(() => {
@@ -88,6 +94,9 @@ export function Feeder({
       </>
     );
   }
+
+  const refeicoes = feeder.meals_24h ?? null;
+  const limiteAtingido = refeicoes !== null && refeicoes >= FEEDER_MEALS_PER_24H;
 
   const step = (field: "hour1" | "hour2", delta: number) => {
     setLocal(true);
@@ -149,6 +158,12 @@ export function Feeder({
             </div>
           </>
         )}
+        {refeicoes !== null ? (
+          <div className={`c-sub ${limiteAtingido ? "limite-atingido" : ""}`}>
+            {refeicoes} de {FEEDER_MEALS_PER_24H} refeições nas últimas 24 h
+            {limiteAtingido ? " · limite atingido" : ""}
+          </div>
+        ) : null}
       </div>
 
       {feeder.last_feed_ok === false ? (
@@ -230,11 +245,45 @@ export function Feeder({
       <button
         className={`btn btn-feeder ${local ? "secondary" : ""}`}
         disabled={!conectado || enviando}
-        onClick={() => onSend({ action: "feeder.feed_now" })}
+        onClick={() =>
+          // No limite, pergunta antes: passar por cima é decisão consciente,
+          // nunca um toque a mais. O botão do módulo nem tem essa opção.
+          limiteAtingido ? setConfirmarLimite(true) : onSend({ action: "feeder.feed_now" })
+        }
       >
         <IconFeeder />
         Alimentar agora
       </button>
+
+      {confirmarLimite ? (
+        <Sheet
+          title="Limite de refeições atingido"
+          subtitle={`O peixe já comeu ${refeicoes ?? FEEDER_MEALS_PER_24H} vezes nas últimas 24 h, contando a agenda.`}
+          onClose={() => setConfirmarLimite(false)}
+          footer={
+            <>
+              <button className="sheet-btn secundario" onClick={() => setConfirmarLimite(false)}>
+                Cancelar
+              </button>
+              <button
+                className="sheet-btn primario"
+                onClick={() => {
+                  setConfirmarLimite(false);
+                  onSend({ action: "feeder.feed_now", force: true });
+                }}
+              >
+                Alimentar mesmo assim
+              </button>
+            </>
+          }
+        >
+          <div className="campo-resumo" style={{ marginTop: 0 }}>
+            Ração demais suja a água e faz mal ao betta. Passe do limite só se
+            tiver certeza — num teste, por exemplo. Fica registrado nos
+            Registros.
+          </div>
+        </Sheet>
+      ) : null}
 
       <CommandStatus feedback={meuFeedback} />
 

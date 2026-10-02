@@ -283,6 +283,11 @@ button {
   margin-top: 5px;
 }
 
+/* Âmbar, não vermelho: limite de ração é cuidado, não defeito. */
+.c-sub.limite-atingido {
+  color: var(--c-amber);
+}
+
 .screen-title {
   font-size: 0.62rem;
   font-weight: 700;

@@ -186,32 +186,48 @@ describe(
       assert.equal(r.rows[0]?.samples, 6, "as amostras fora da faixa contam, só não entram na temperatura");
     });
 
-    it("a 0010 limpa o -48 do histórico e refaz a hora do rollup, e pode rodar de novo", async () => {
+    it("a 0010 tira só o impossível: o -48 sai, o calor real fica, e pode rodar de novo", async () => {
       const migration = await readFile(
         new URL("../../drizzle/0010_temperatura_impossivel.sql", import.meta.url),
         "utf8",
       );
-      const hora = "date_trunc('hour', now() - interval '2 hours')";
+      // Três horas, cada uma com uma pergunta:
+      //   -6 h  só leituras de 27,5 e um -48           → refeita: 27,5
+      //   -5 h  um -48 e um 34 real na mesma hora       → refeita, o 34 fica
+      //   -4 h  um 34 real e nada impossível            → intocada
+      const horas = [6, 5, 4];
+      const valor: Record<number, (g: number) => string> = {
+        6: (g) => (g === 30 ? "-48" : "27.5"),
+        5: (g) => (g === 30 ? "-48" : g === 40 ? "34" : "27.5"),
+        4: (g) => (g === 40 ? "34" : "27.5"),
+      };
+      for (const h of horas) {
+        for (const g of [0, 10, 20, 30, 40, 50]) {
+          await rt.db.execute(sql`
+            insert into telemetry
+              (received_at, device_id, boot_id, seq, light_on, temp_celsius, temp_valid,
+               fan_on, fan_speed_percent, fan_rpm, fan_mode)
+            values (date_trunc('hour', now() - make_interval(hours => ${h})) + make_interval(mins => ${g}),
+                    ${ROLLUP}, ${10 + h}, ${g}, false, ${sql.raw(valor[h]!(g))}, true, false, 0, 0, 'auto')
+          `);
+        }
+      }
+      // O rollup como a v1.1.1 o deixaria: com o -48 dentro.
       await rt.db.execute(sql`
-        insert into telemetry
-          (received_at, device_id, boot_id, seq, light_on, temp_celsius, temp_valid,
-           fan_on, fan_speed_percent, fan_rpm, fan_mode)
-        select ${sql.raw(hora)} + (g || ' minutes')::interval, ${ROLLUP}, 2, g, false,
-               case when g = 30 then -48 else 27.5 end, true, false, 0, 0, 'auto'
-          from generate_series(0, 50, 10) g
-      `);
-      await rt.db.execute(sql`
-        insert into telemetry_hourly (device_id, hour, temp_min, temp_avg, temp_max, samples)
-        values (${ROLLUP}, ${sql.raw(hora)}, -48, 14.9, 27.5, 6)
-        on conflict (device_id, hour) do update
-          set temp_min = -48, temp_avg = 14.9, temp_max = 27.5
+        insert into telemetry_hourly (device_id, hour, temp_min, temp_avg, temp_max, samples) values
+          (${ROLLUP}, date_trunc('hour', now() - interval '6 hours'), -48, 14.9, 27.5, 6),
+          (${ROLLUP}, date_trunc('hour', now() - interval '5 hours'), -48, 16.0, 34, 6),
+          (${ROLLUP}, date_trunc('hour', now() - interval '4 hours'), 27.5, 28.6, 34, 6)
+        on conflict (device_id, hour) do update set
+          temp_min = excluded.temp_min, temp_avg = excluded.temp_avg,
+          temp_max = excluded.temp_max, samples = excluded.samples
       `);
 
-      for (const parte of migration.split("--> statement-breakpoint")) {
-        await rt.db.execute(sql.raw(parte));
-      }
-      for (const parte of migration.split("--> statement-breakpoint")) {
-        await rt.db.execute(sql.raw(parte)); // idempotente
+      for (let vez = 0; vez < 2; vez++) {
+        // Na segunda vez, nada pode mudar: idempotente.
+        for (const parte of migration.split("--> statement-breakpoint")) {
+          await rt.db.execute(sql.raw(parte));
+        }
       }
 
       const brutos = await rt.db.execute<{ n: string }>(sql`
@@ -219,13 +235,17 @@ describe(
          where device_id = ${ROLLUP} and (temp_celsius < 10 or temp_celsius > 45)
       `);
       assert.equal(brutos.rows[0]?.n, "0");
-      const h = await rt.db.execute<{ temp_min: number; temp_avg: number; temp_max: number }>(sql`
-        select temp_min, temp_avg, temp_max from telemetry_hourly
-         where device_id = ${ROLLUP} and hour = ${sql.raw(hora)}
-      `);
-      assert.equal(h.rows[0]?.temp_min, 27.5);
-      assert.equal(h.rows[0]?.temp_avg, 27.5);
-      assert.equal(h.rows[0]?.temp_max, 27.5);
+
+      const linha = async (h: number) =>
+        (
+          await rt.db.execute<{ temp_min: number; temp_max: number; samples: number }>(sql`
+            select temp_min, temp_max, samples from telemetry_hourly
+             where device_id = ${ROLLUP} and hour = date_trunc('hour', now() - make_interval(hours => ${h}))
+          `)
+        ).rows[0];
+      assert.deepEqual(await linha(6), { temp_min: 27.5, temp_max: 27.5, samples: 6 });
+      assert.deepEqual(await linha(5), { temp_min: 27.5, temp_max: 34, samples: 6 }, "o 34 real fica");
+      assert.deepEqual(await linha(4), { temp_min: 27.5, temp_max: 34, samples: 6 }, "hora sem impossível intocada");
     });
   },
 );

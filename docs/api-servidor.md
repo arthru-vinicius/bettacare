@@ -213,7 +213,9 @@ para esta instalação — aquário em Recife, com ar-condicionado:
   anterior, não custa consulta nenhuma.
 
 A migration 0010 tirou do histórico as duas leituras de -48 e refez a hora que
-elas contaminaram.
+elas contaminaram — só o impossível: uma hora antiga com calor ou frio de
+verdade fica como estava, porque para ela não existe o aviso que a regra nova
+deixaria no lugar.
 
 ### Bloco `feeder`
 
@@ -256,7 +258,8 @@ O que foi exercitado contra Postgres 17 real, simulando o ESP32 com `curl`:
 - água acima de 33 °C por 11 min: um aviso só, com duração, horário no fuso
   de exibição e pico; abaixo de 16 °C, outro, no sentido contrário
 - rollup com amostras de 15 e 34 °C agregando só as de 27 e 28 °C; a 0010
-  limpando o -48 e refazendo a hora, duas vezes seguidas sem efeito na segunda
+  limpando o -48 e refazendo só as horas que ele contaminou — o 34 real de
+  uma hora fica —, duas vezes seguidas sem efeito na segunda
 - corpos com `feeder: {connected: false}` e sem o bloco `feeder`, contra a
   imagem **v1.1.0** publicada: aceitos, sem correção nem evento — o firmware
   novo pode ir para o aquário antes do servidor novo

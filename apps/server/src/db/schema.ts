@@ -374,7 +374,11 @@ export const telemetryHourly = pgTable(
     /** Minutos com a ventoinha girando dentro da hora. */
     fanMinutes: smallint("fan_minutes").notNull().default(0),
     fanRpmAvg: integer("fan_rpm_avg"),
-    /** Quantas amostras entraram na agregação — indica lacunas. */
+    /**
+     * Linhas brutas da hora — a cobertura, que indica lacunas. Conta também
+     * as que ficaram fora da temperatura (fora da faixa habitual, ou leitura
+     * descartada): elas contam para luz e ventoinha do mesmo jeito.
+     */
     samples: integer("samples").notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.deviceId, t.hour] })],

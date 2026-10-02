@@ -193,6 +193,28 @@ Registros), e só a abertura sai como `warn` no log; as repetições vão para
 `debug`. Um campo que o firmware manda errado erra em todo POST — na v1.1.0
 foram 86 mil eventos por dia com a telemetria a 1 s.
 
+### Temperatura
+
+Duas faixas, no contrato (`TEMP_PLAUSIBLE_C` e `TEMP_USUAL_C`), escolhidas
+para esta instalação — aquário em Recife, com ar-condicionado:
+
+- **Fora de 10–45 °C, a leitura é impossível.** O firmware 2.0.2 já a
+  descarta; o ingest confere de novo, para firmware anterior e regressão. O
+  POST segue como se trouxesse a última leitura boa — o valor não chega ao
+  estado, ao histórico, à saúde nem ao gráfico — e o descarte vira
+  `temp.implausible`, agrupado por hora como as correções. Foi um -48,00 °C
+  isolado em produção, um quadro de 1-Wire que passou no CRC.
+- **Fora de 16–33 °C, a leitura é real, mas rara.** O rollup horário, que
+  alimenta o gráfico, só agrega essa faixa. O episódio vira **um** aviso
+  `temp.out_of_usual_range` nos Registros: aberto na primeira leitura fora,
+  reescrito a cada minuto ou pico novo ("Água acima de 33 °C há 12 min"),
+  fechado na primeira de volta — "Água ficou acima de 33 °C por 11 min, das
+  12:02 às 12:13 (máx. 34,6 °C)". O caso comum, água na faixa agora e no POST
+  anterior, não custa consulta nenhuma.
+
+A migration 0010 tirou do histórico as duas leituras de -48 e refez a hora que
+elas contaminaram.
+
 ### Bloco `feeder`
 
 `connected` é o único campo que conta sempre. Com `connected: false`, o resto
@@ -228,6 +250,13 @@ O que foi exercitado contra Postgres 17 real, simulando o ESP32 com `curl`:
   abre outro passada a janela de 1 h
 - bloco do alimentador zerado (firmware 2.0.0) não gera evento nem agenda, e
   desconectar preserva a última agenda conhecida
+- leitura de -48 °C: o estado fica com a última boa, o histórico e a saúde
+  nunca a veem, e o aviso soma repetições; sem leitura boa anterior, vira
+  leitura inválida, não "sensor perdido"
+- água acima de 33 °C por 11 min: um aviso só, com duração, horário no fuso
+  de exibição e pico; abaixo de 16 °C, outro, no sentido contrário
+- rollup com amostras de 15 e 34 °C agregando só as de 27 e 28 °C; a 0010
+  limpando o -48 e refazendo a hora, duas vezes seguidas sem efeito na segunda
 - corpos com `feeder: {connected: false}` e sem o bloco `feeder`, contra a
   imagem **v1.1.0** publicada: aceitos, sem correção nem evento — o firmware
   novo pode ir para o aquário antes do servidor novo

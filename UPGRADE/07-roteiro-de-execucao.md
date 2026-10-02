@@ -387,3 +387,37 @@ Corpos com `feeder: {connected: false}` e sem o bloco foram testados contra a
 **imagem v1.1.0 publicada**: aceitos, sem correção nem evento, então o firmware
 novo pode ir para o aquário antes do servidor novo. Testes: 48 do servidor (6
 novos), 30 do contrato.
+
+## Depois da v1.1.1 — firmware do alimentador, montagem e termômetro (v1.1.2)
+
+Três pedidos do Arthur, em ordem, depois de a v1.1.1 ir para o ghcr.
+
+**Firmware 2.0.1 — só fala com o alimentador fisicamente presente.** O RX do
+enlace (`GPIO16`) passou de pull-up para pull-down: conector vazio é nível
+baixo, módulo ligado é nível alto. Sem módulo no fio, nenhum `PING`; o POST
+só leva o bloco `feeder` com o módulo conectado. Gravado por OTA, e o
+`homelab-c4` conferiu no banco: o último `ingest.field_rejected` foi às
+18:45:00Z, cinco segundos antes do boot — 47.947 no total, nenhum depois.
+
+**Montagem do módulo alimentador reorganizada** (nada estava soldado):
+`docs/pinagem-alimentador-modulo.md` reescrito para durar. O botão saiu do
+`GPIO11`, e o enlace foi para a UART0 com resistores em série. Entraram
+pull-downs nos atuadores, o LED IR com autoteste, a alimentação por cabo
+**ou** fonte própria com diodos e fusível, e o roteiro de bancada novo.
+
+**Termômetro gravando -48 °C.** Os dados de produção (`homelab-c4`): duas
+amostras em ~36 h de histórico, -48,00 exatos (`0xFD00`), entre leituras de
+27,13 °C, cinco minutos depois de um boot e sem nenhum `temp.*` em volta —
+um quadro de 1-Wire corrompido que passou no CRC (1 em 256). A hora 23:00Z
+ficou com mínima -48 e média 1,5 °C abaixo do real.
+
+| Camada | Correção |
+|---|---|
+| Firmware 2.0.2 | Fora de 10–45 °C, descartada, com o scratchpad cru no evento; salto de mais de 2 °C só com a releitura confirmando; leitura pelo endereço, sem busca no 1-Wire a cada conversão |
+| Ingest | A mesma faixa conferida de novo: a leitura impossível não chega ao estado, ao histórico, à saúde nem ao gráfico |
+| Rollup | Só agrega 16–33 °C, a faixa habitual da água |
+| Registros | Água fora de 16–33 °C vira um aviso por episódio, com duração, horário e pico |
+| Migration 0010 | Só dados: tira o -48 do histórico e refaz a hora |
+
+Testes: 54 do servidor (6 novos), 30 do contrato, 95 de host do firmware (21
+novos, do termômetro). O 2.0.2 está gravado no ESP32 da bancada.

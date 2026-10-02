@@ -129,7 +129,7 @@ antes aceitava como toque os picos que o 1-Wire do `GPIO19` induz no fio do
 | Sensor sondado só no boot | Re-sondagem a cada 10 s |
 | Tacômetro só reportado | Tacômetro **vigiado** (`fan.tach_stalled`) |
 | PWM 0 % para "desligar" | Corte físico do `GND` da ventoinha (`GPIO26`), lido de volta a cada 2 s |
-| Qualquer leitura do DS18B20 aceita | 85,0 °C (valor de power-on) descartado: `temp.reset_value` |
+| Qualquer leitura do DS18B20 aceita | 85,0 °C de power-on descartado (`temp.reset_value`); fora de 10–45 °C descartada (`temp.implausible`); salto de mais de 2 °C só com a releitura confirmando (2.0.2) |
 
 Sobre a re-sondagem: antes, um DS18B20 que caísse depois do boot deixava
 `available` verdadeiro para sempre e as leituras apenas paravam de mudar. O
@@ -156,6 +156,30 @@ falhando (aí vale o recuo abaixo).
 Com o servidor fora do ar, o intervalo cresce até 30 s. Sem isso seriam 20
 requisições por minuto sem propósito, cada uma com timeout de 4 s. O aquário
 segue operando sozinho e volta a falar quando houver com quem.
+
+### O termômetro: leitura que passou no CRC ainda pode ser lixo (2.0.2)
+
+O CRC-8 do DS18B20 deixa passar, por acaso, 1 em cada 256 quadros
+corrompidos. Em produção apareceram dois -48,00 °C (registrador `0xFD00`)
+entre leituras de 27,13 °C, cinco minutos depois de um boot, sem nenhum
+`temp.*` em volta: o firmware os aceitou como leitura válida, e eles entraram
+no gráfico.
+
+- **Faixa possível:** fora de 10–45 °C (a água desta instalação não sai disso;
+  `TEMP_PLAUSIBLE_MIN_C`/`MAX_C` no `config.h` para outra), a leitura é
+  descartada e conta como falha — três seguidas, sensor perdido. O evento
+  `temp.implausible` leva os 9 bytes crus do scratchpad, para separar CRC fraco
+  de ruído no fio.
+- **Salto:** uma leitura a mais de 2 °C da anterior não é aceita de cara. O
+  valor anterior fica, a conversão seguinte sai na hora (sem esperar os 5 s), e
+  o salto só vale se ela confirmar, a 0,5 °C. Não confirmou: `temp.spike_discarded`.
+  É o que pega o quadro corrompido que caia dentro da faixa, um 20 °C por
+  exemplo. Uma mudança real atrasa ~1 s.
+- **Leitura pelo endereço:** o `getTempCByIndex()` refazia a busca no 1-Wire a
+  cada conversão; agora o endereço é lido uma vez, na sondagem. Menos tráfego
+  no fio, menos chance de corromper.
+
+O servidor confere a mesma faixa de novo (ver `api-servidor.md`).
 
 ### O alimentador: só com ele no fio (2.0.1)
 
@@ -186,7 +210,7 @@ Na bancada, `/status` mostra `feeder.present`: falso com o conector vazio.
 ## Verificado
 
 - **Compila** contra ESP32 core 3.3.8 e ArduinoJson 7.4.3, sem nenhum aviso nos
-  arquivos do projeto mesmo com `--warnings all`: 1.137.662 bytes (86% do
+  arquivos do projeto mesmo com `--warnings all`: 1.138.378 bytes (86% do
   flash), 57 KB de RAM global (17%).
 - **Os quatro formatos de corpo** que o firmware emite (normal, sensor ausente,
   RTC sumido, com `ack` de recusa e eventos) validam contra
@@ -209,10 +233,14 @@ Na bancada, `/status` mostra `feeder.present`: falso com o conector vazio.
   `feeder.present: false`. Não há resistor externo no `GPIO16` da placa
   montada.
 - **Testes de host** (g++ no PC, com o `.cpp` de produção e stubs mínimos de
-  Wire/RTClib/Serial/GPIO): 37 verificações da automação por horário e da
-  leitura do DS3231, e 37 do enlace com o alimentador: parser, presença no
-  fio, nenhum `PING` sem módulo, desconexão na hora com o cabo arrancado e o
-  0x00 do *break*.
+  Wire/RTClib/Serial/GPIO/DallasTemperature): 37 verificações da automação por
+  horário e da leitura do DS3231; 37 do enlace com o alimentador — parser,
+  presença no fio, nenhum `PING` sem módulo, desconexão na hora com o cabo
+  arrancado e o 0x00 do *break*; e 21 do termômetro — o -48,00 de produção
+  descartado com o scratchpad, salto relido e descartado, mudança real
+  confirmada, 85,0 de power-on e sensor perdido por leituras impossíveis.
+- **Firmware 2.0.2 no ESP32 da bancada** (2026-10-02): temperatura válida e
+  renovada a cada ~5 s, POST com 200.
 
 ## Não verificado — exige hardware
 

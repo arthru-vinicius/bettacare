@@ -528,8 +528,16 @@ GND comum ───────────────────────�
   próprio terra procura outro: até a 2.0.2, desligar escrevia o complemento de
   0% — buffer conduzindo o tempo todo, pino 4 preso no `GND` —, e a eletrônica
   dela voltava por ali. Sobravam **3 a 7 V** entre os pinos 1 e 2, e ela girava
-  aos trancos, cadenciados, com o `GPIO26` corretamente em 0 V. Para conferir:
-  com a ventoinha desligada, a tensão entre os pinos 1 e 2 fica perto de 0 V.
+  aos trancos, cadenciados, com o `GPIO26` corretamente em 0 V. Com a 2.0.3,
+  desligada, ela fica parada, com **~3,3 V estáveis** entre os pinos 1 e 2
+  (medido em 2026-10-02). É inofensivo: o pino 1 fica flutuando, e o
+  multímetro, de 10 MΩ, mede o que sobra de fuga — corrente nenhuma que mova o
+  motor ou aqueça algo. Se essa tensão voltar a oscilar ou a ventoinha voltar
+  a dar trancos, algo voltou a dar caminho ao pino 4 ou ao pino 3.
+- **O corte limpo de verdade seria no `+12V`**, não no retorno: um P-MOSFET
+  acionado pelo AO3400 atual, com o `GND` da ventoinha fixo. Desligada, nada
+  flutua, e a leitura é 0 V; o firmware e o "ligada por padrão" não mudam. Não
+  é necessário — fica registrado para quando esta parte da placa for refeita.
 - **O resistor de 100 kΩ aqui é pullup pro `3V3`, não pulldown pro `GND`** —
   o oposto do gate do SSR e do PWM. É deliberado: a regra do projeto é que uma
   falha sempre penda pra "mais resfriamento", nunca menos (mesmo raciocínio

@@ -2,6 +2,7 @@
 
 #include <DallasTemperature.h>
 #include <OneWire.h>
+#include <math.h>
 
 #include "config.h"
 #include "event_log.h"
@@ -10,8 +11,24 @@
 #define TEMP_MAX_STALE_MS 15000UL
 #endif
 
+/**
+ * Faixa fisicamente possível da água **nesta instalação** — aquário em
+ * Recife, com ar-condicionado: nunca abaixo de 10 °C, nunca acima de 45 °C.
+ * Fora dela, a leitura é defeito, não temperatura. A mesma faixa está no
+ * contrato (`TEMP_PLAUSIBLE_C`), que o servidor usa para conferir de novo.
+ * Outra instalação ajusta no `config.h`.
+ */
+#ifndef TEMP_PLAUSIBLE_MIN_C
+#define TEMP_PLAUSIBLE_MIN_C 10.0f
+#endif
+#ifndef TEMP_PLAUSIBLE_MAX_C
+#define TEMP_PLAUSIBLE_MAX_C 45.0f
+#endif
+
 static OneWire           _bus(PIN_DS18B20);
 static DallasTemperature _sensors(&_bus);
+/** Endereço do sensor, lido uma vez na sondagem — não a cada conversão. */
+static DeviceAddress     _addr;
 static bool              _available          = false;
 static float             _cached_celsius     = NAN;
 static bool              _has_valid_reading  = false;
@@ -61,13 +78,28 @@ static const uint8_t FAILURES_TO_LOST = 3;
  */
 static const float POWER_ON_RESET_C = 85.0f;
 
+/**
+ * Salto entre duas conversões (5 s) acima disto só vale se a releitura
+ * confirmar. A água não muda 2 °C em 5 s; um quadro corrompido muda.
+ *
+ * O CRC-8 do DS18B20 deixa passar, por acaso, 1 em cada 256 quadros
+ * corrompidos. Em produção foi um -48,00 °C entre leituras de 27,13 °C —
+ * fora da faixa, e pego por ela. Este filtro pega o caso que a faixa não pega:
+ * um quadro corrompido que caia, por exemplo, em 20 °C.
+ */
+static const float JUMP_CONFIRM_C = 2.0f;
+/** A releitura confirma o salto se cair a até isto do valor suspeito. */
+static const float CONFIRM_TOLERANCE_C = 0.5f;
+
 static uint8_t _consecutive_failures = 0;
+static bool    _jump_pending = false;
+static float   _jump_value = NAN;
 
 static void _probe() {
   _last_probe_ms = millis();
   _sensors.begin();
   int count = _sensors.getDeviceCount();
-  bool encontrado = (count > 0);
+  bool encontrado = (count > 0) && _sensors.getAddress(_addr, 0);
 
   if (encontrado == _available) return;   // sem transição, nada a dizer
 
@@ -75,6 +107,7 @@ static void _probe() {
   if (encontrado) {
     _sensors.setResolution(12);
     _consecutive_failures = 0;
+    _jump_pending = false;
     event_log(SEV_INFO, COMP_TEMP, "temp.sensor_found",
               "DS18B20 reconhecido no barramento (%d sensor(es))", count);
   } else {
@@ -83,6 +116,41 @@ static void _probe() {
     event_log(SEV_ERROR, COMP_TEMP, "temp.sensor_lost",
               "Nenhum DS18B20 responde no 1-Wire; verifique o cabo e o pull-up");
   }
+}
+
+/** Uma conversão sem leitura aproveitável. Três seguidas, o sensor está perdido. */
+static void _count_failure(unsigned long agora) {
+  if (_consecutive_failures < 255) _consecutive_failures++;
+  if (_consecutive_failures != FAILURES_TO_LOST) return;
+
+  event_log(SEV_WARN, COMP_TEMP, "temp.crc_error",
+            "%u leituras invalidas seguidas; sensor considerado perdido",
+            (unsigned)_consecutive_failures);
+
+  /**
+   * A transição vira evento **aqui**, não em `_probe()` (UPGRADE/03, F4).
+   * `_probe()` só fala quando `encontrado != _available` — e como a linha
+   * seguinte já marca `_available = false`, a próxima sondagem que
+   * confirme "não está lá" bate `false == _available (false)` e volta
+   * calada. Sem isto, `temp.sensor_lost` nunca saía por este caminho: um
+   * DS18B20 que morresse por cabo solto emitia um único `temp.crc_error` e
+   * depois silêncio — a pergunta "desde quando o sensor sumiu?" ficava sem
+   * resposta justamente no caso mais comum.
+   */
+  _available = false;
+  _has_valid_reading = false;
+  _cached_celsius = NAN;
+  _jump_pending = false;
+  _last_probe_ms = agora;
+  event_log(SEV_ERROR, COMP_TEMP, "temp.sensor_lost",
+            "DS18B20 parou de responder apos %u leituras invalidas seguidas",
+            (unsigned)_consecutive_failures);
+}
+
+static void _report_spike(float suspeito, float agua) {
+  event_log(SEV_WARN, COMP_TEMP, "temp.spike_discarded",
+            "Salto para %.2fC nao confirmado na releitura (agua em %.2fC); descartado",
+            suspeito, agua);
 }
 
 void temperature_init() {
@@ -103,7 +171,8 @@ void temperature_update() {
   if (!_conversion_pending) {
     // Espaça as conversões (ver `SAMPLE_INTERVAL_MS`). A primeira leitura do
     // boot não espera: `_last_conversion_ms` começa em zero e o dispositivo
-    // precisa saber a temperatura antes de decidir qualquer coisa.
+    // precisa saber a temperatura antes de decidir qualquer coisa. A
+    // releitura de um salto também não (`_last_conversion_ms = 0` abaixo).
     if (_last_conversion_ms != 0 && agora - _last_conversion_ms < SAMPLE_INTERVAL_MS) {
       return;
     }
@@ -117,50 +186,58 @@ void temperature_update() {
   if (agora - _conversion_start < CONVERSION_MS) return;
   _conversion_pending = false;
 
-  float t = _sensors.getTempCByIndex(0);
+  // CRC e "scratchpad todo zero" conferidos pela biblioteca. O endereço vem
+  // da sondagem: `getTempCByIndex()` refazia a busca no 1-Wire a cada
+  // conversão — mais tráfego no fio, mais chance de corromper.
+  uint8_t sp[9];
+  bool lido = _sensors.isConnected(_addr, sp);
+  if (!lido) {
+    _count_failure(agora);
+    return;
+  }
+  // DS18B20 a 12 bits: registrador de 16 bits com sinal, 1/16 °C por passo.
+  float t = (int16_t)((sp[1] << 8) | sp[0]) / 16.0f;
 
-  // Conversão exata, sem margem: o DallasTemperature escala o registrador por
-  // potência de dois, e 0x0550 vira exatamente 85.0f.
-  bool valor_de_reset = (t == POWER_ON_RESET_C);
-  if (valor_de_reset) {
+  // Conversão exata, sem margem: 0x0550 vira exatamente 85.0f.
+  if (t == POWER_ON_RESET_C) {
     event_log(SEV_WARN, COMP_TEMP, "temp.reset_value",
               "DS18B20 devolveu 85.0C, o valor de power-on; leitura descartada");
-  }
-
-  // DEVICE_DISCONNECTED_C é -127; qualquer coisa abaixo de -100 é o sensor
-  // dizendo que não está lá, não uma temperatura.
-  if (t > -100.0f && !valor_de_reset) {
-    _cached_celsius = t;
-    _has_valid_reading = true;
-    _last_valid_ms = agora;
-    _consecutive_failures = 0;
+    _count_failure(agora);
     return;
   }
 
-  if (_consecutive_failures < 255) _consecutive_failures++;
-  if (_consecutive_failures == FAILURES_TO_LOST) {
-    event_log(SEV_WARN, COMP_TEMP, "temp.crc_error",
-              "%u leituras invalidas seguidas; sensor considerado perdido",
-              (unsigned)_consecutive_failures);
-
-    /**
-     * A transição vira evento **aqui**, não em `_probe()` (UPGRADE/03, F4).
-     * `_probe()` só fala quando `encontrado != _available` — e como a linha
-     * seguinte já marca `_available = false`, a próxima sondagem que
-     * confirme "não está lá" bate `false == _available (false)` e volta
-     * calada. Sem isto, `temp.sensor_lost` nunca saía por este caminho: um
-     * DS18B20 que morresse por cabo solto emitia um único `temp.crc_error` e
-     * depois silêncio — a pergunta "desde quando o sensor sumiu?" ficava sem
-     * resposta justamente no caso mais comum.
-     */
-    _available = false;
-    _has_valid_reading = false;
-    _cached_celsius = NAN;
-    _last_probe_ms = agora;
-    event_log(SEV_ERROR, COMP_TEMP, "temp.sensor_lost",
-              "DS18B20 parou de responder apos %u leituras invalidas seguidas",
-              (unsigned)_consecutive_failures);
+  if (t < TEMP_PLAUSIBLE_MIN_C || t > TEMP_PLAUSIBLE_MAX_C) {
+    // O scratchpad cru diz se foi CRC fraco ou ruído no fio — sem ele, o
+    // -48,00 de produção não tinha como ser investigado.
+    event_log(SEV_WARN, COMP_TEMP, "temp.implausible",
+              "Leitura impossivel descartada: %.2fC [%02X %02X %02X %02X %02X %02X %02X %02X %02X]",
+              t, sp[0], sp[1], sp[2], sp[3], sp[4], sp[5], sp[6], sp[7], sp[8]);
+    _count_failure(agora);
+    return;
   }
+
+  bool salto = _has_valid_reading && fabsf(t - _cached_celsius) > JUMP_CONFIRM_C;
+  if (salto) {
+    bool confirma = _jump_pending && fabsf(t - _jump_value) <= CONFIRM_TOLERANCE_C;
+    if (!confirma) {
+      if (_jump_pending) _report_spike(_jump_value, _cached_celsius);
+      // Segura o valor anterior e relê já, sem esperar os 5 s: uma mudança
+      // real se confirma em ~1 s.
+      _jump_pending = true;
+      _jump_value = t;
+      _last_conversion_ms = 0;
+      return;
+    }
+  } else if (_jump_pending) {
+    // A releitura voltou para perto da água: o salto era leitura ruim.
+    _report_spike(_jump_value, t);
+  }
+  _jump_pending = false;
+
+  _cached_celsius = t;
+  _has_valid_reading = true;
+  _last_valid_ms = agora;
+  _consecutive_failures = 0;
 }
 
 float temperature_read() { return _cached_celsius; }

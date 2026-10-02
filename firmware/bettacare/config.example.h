@@ -21,7 +21,7 @@
 // --- Identidade do dispositivo -----------------------------------------------
 // Precisa casar com o slug usado no servidor: minúsculas, dígitos e hífen.
 #define DEVICE_ID      "aquarium-01"
-#define FW_VERSION     "2.0.1"
+#define FW_VERSION     "2.0.2"
 
 // --- Wi-Fi -------------------------------------------------------------------
 #define WIFI_SSID      "YOUR_NETWORK_HERE"
@@ -119,6 +119,14 @@
 // "velha" e dispararia o failsafe da ventoinha sem nenhum defeito real.
 // 15 s dá margem de quase 3x. O servidor usa 30 s, ainda mais folgado.
 #define TEMP_MAX_STALE_MS   15000UL
+
+// Faixa fisicamente possível da água nesta instalação (Recife, com
+// ar-condicionado). Fora dela a leitura é descartada como defeito do fio
+// (`temp.implausible`) — foi um -48,00 °C isolado em produção. Precisa
+// casar com `TEMP_PLAUSIBLE_C` do contrato, que o servidor usa. Sem as
+// linhas, valem 10 e 45.
+// #define TEMP_PLAUSIBLE_MIN_C 10.0f
+// #define TEMP_PLAUSIBLE_MAX_C 45.0f
 
 // --- API local do ESP32 e OTA ------------------------------------------------
 // Continua existindo para diagnóstico direto e recuperação, independente do

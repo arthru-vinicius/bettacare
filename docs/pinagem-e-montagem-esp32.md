@@ -572,8 +572,8 @@ montagem**:
 |---|---|---|---|---|
 | 1 | preto | `GND` | `GND` comum | `GND` |
 | 2 | verde | `12V` | `+12V` bruto da fonte, **antes** do buck do ESP32 | entrada do regulador local de 5 V |
-| 3 | vermelho | `TX` → | `GPIO4` (`TXD2`) | `GPIO20` (RX da UART0), por 4,7 kΩ |
-| 4 | azul | ← `RX` | `GPIO16` (`RXD2`) | `GPIO21` (TX da UART0), por 1 kΩ |
+| 3 | vermelho | `TX` → | `GPIO4` (`TXD2`) | `GPIO20` (RX do enlace), por 4,7 kΩ |
+| 4 | azul | ← `RX` | `GPIO16` (`RXD2`) | `GPIO21` (TX do enlace), por 1 kΩ |
 
 A última coluna é do ESP32-C3 — chip diferente, numeração independente. Os
 resistores ficam do lado do módulo; o porquê, e o resto da montagem dele, em

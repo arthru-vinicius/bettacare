@@ -7,9 +7,12 @@ módulo que fica na caixinha separada, ligado ao principal por 4 fios.
 
 > **Criado em 2026-09-03, reorganizado em 2026-10-02**, antes de qualquer
 > solda, com um critério só: durar. A placa já existe (Tenstar ESP32-C3 Super
-> Mini, com o bootstrap de Wi-Fi + OTA de `firmware/feeder-module/`); o resto
-> ainda não foi montado. O módulo funciona sozinho — RTC, botão e display
-> próprios — e o cabo com o principal é opcional.
+> Mini) e roda o firmware completo, em beta, de `firmware/feeder-module/` —
+> o [README de lá](../firmware/feeder-module/README.md) tem a gravação, o
+> console e a primeira montagem na bancada. O resto ainda não foi montado. O
+> módulo funciona sozinho — RTC, botão e display próprios — e o cabo com o
+> principal é opcional. A estrutura impressa (base, torre e topo) está em
+> [`modelagem-alimentador/`](./modelagem-alimentador/).
 >
 > **O módulo não fica ligado o tempo todo.** Liga quando for prático — isso
 > exige duas garantias no firmware que não existiriam se ele ficasse sempre
@@ -25,7 +28,7 @@ módulo que fica na caixinha separada, ligado ao principal por 4 fios.
 | Antes | Agora | Por quê |
 |---|---|---|
 | Botão no `GPIO11` | `GPIO5` | O `GPIO11` é o `VDD_SPI`, que alimenta a flash da placa; a Super Mini nem o expõe |
-| Enlace na UART1, `GPIO4`/`GPIO5` | UART0, `GPIO20`/`GPIO21`, com resistor em série nos dois fios | O `GPIO21` solta o log do ROM a cada reset: fica com o que tolera isso, e dois pinos quietos sobram para os atuadores. Os resistores protegem a ligação a quente e mantêm a detecção do módulo pelo principal (§7) |
+| Enlace na UART1, `GPIO4`/`GPIO5` | `GPIO20`/`GPIO21` (os pinos da UART0, usados pela UART1), com resistor em série nos dois fios | O `GPIO21` solta o log do ROM a cada reset: fica com o que tolera isso, e dois pinos quietos sobram para os atuadores. A UART0 em si fica com o console do sistema, cujo log de erro corromperia uma linha do protocolo. Os resistores protegem a ligação a quente e mantêm a detecção do módulo pelo principal (§7) |
 | LED IR sempre aceso, no `3V3` | Ligado pelo `GPIO4`, só durante a dosagem | Vida do LED, menos luz parasita e um autoteste do sensor antes de cada refeição |
 | BC337 com 1 kΩ e 1N4148 nos dois motores | Resistor de base por motor, pull-down na base, 1N5819 e PWM | O 1N4148 é pequeno para o pico do DC130P; sem pull-down o motor pode dar um tranco no boot; o 1027 é motor de 3 V |
 | Servo direto no `GPIO10` | 330 Ω em série e 10 kΩ ao GND | Sem tranco no boot; o firmware solta o PWM depois de cada movimento |
@@ -47,10 +50,10 @@ Expõe `5V`, `GND`, `3V3` e os GPIOs 0 a 10, 20 e 21. Nem todos servem:
 | `GPIO11` | `VDD_SPI`: alimenta a flash; não exposto | — |
 | `GPIO12`–`GPIO17` | flash SPI; não expostos | — |
 | `GPIO18`/`GPIO19` | USB nativo (gravação e console); não expostos | — |
-| `GPIO20`/`GPIO21` | UART0; o ROM manda o log de boot pelo `GPIO21` a cada reset | enlace com o principal |
+| `GPIO20`/`GPIO21` | UART0; o ROM manda o log de boot pelo `GPIO21` a cada reset | enlace com o principal, pela UART1 |
 | `GPIO0`, `1`, `3`–`7`, `10` | sem função de boot | atuadores, sensores, I²C, botão |
 
-Os dez pinos sem função de boot e o par da UART0 estão todos em uso. Se um
+Os oito pinos sem função de boot (0, 1, 3 a 7 e 10) e o par 20/21 estão todos em uso. Se um
 periférico novo aparecer, ele entra por I²C (um expansor como o PCF8574), nunca
 num pino de *strapping*: um circuito que force o nível errado no reset impede a
 placa de dar boot.
@@ -67,15 +70,15 @@ placa de dar boot.
 |---|---|---|---|
 | 0 | M1 — vibração anti-empacamento | base do BC337 por 1 kΩ, 10 kΩ ao GND; PWM | sem função de boot; o 10 kΩ segura o motor parado no reset |
 | 1 | M2 — vibração de aviso (pêndulo) | base do BC337 por 470 Ω, 10 kΩ ao GND; PWM com rampa | idem |
-| 3 | Sensor IR — saída do LM393 | entrada, interrupção | sem função de boot; é ADC1, então o fototransistor pode ser lido direto no futuro sem refazer a fiação |
+| 3 | Sensor IR — saída do LM393 | entrada com pull-up interno, interrupção | sem função de boot; é ADC1, então o fototransistor pode ser lido direto no futuro sem refazer a fiação. O pull-up faz o fio solto reprovar o autoteste em vez de flutuar |
 | 4 | LED IR | 150 Ω, aceso só na dosagem e no autoteste | sem função de boot |
 | 5 | Botão | `INPUT_PULLUP`; 1 kΩ em série e 100 nF ao GND | sem função de boot; substitui o `GPIO11` |
 | 6 | SDA — DS3231 + SSD1306 | I²C | sem função de boot |
 | 7 | SCL — DS3231 + SSD1306 | I²C | idem |
 | 10 | Servo MG90S — sinal | 330 Ω em série, 10 kΩ ao GND | sem função de boot; o 10 kΩ segura o servo no reset |
-| 20 | RX ← do principal | UART0, 4,7 kΩ em série | a entrada natural da UART0 |
-| 21 | TX → para o principal | UART0, 1 kΩ em série | o log do ROM no boot vai ao principal, que o descarta |
-| 8 | LED da placa | — | status: boot, erro de sensor |
+| 20 | RX ← do principal | UART1, 4,7 kΩ em série | pino da UART0, usado pela UART1 |
+| 21 | TX → para o principal | UART1, 1 kΩ em série | o log do ROM no boot vai ao principal, que o descarta; depois do boot, só o protocolo |
+| 8 | LED da placa | — | aceso na refeição; piscando quando há algo para ver |
 | 2, 9 | — | nada externo | *strapping* |
 | 5V | entrada da placa | do buck por um 1N5819 (§1) | |
 | 3V3 | saída do regulador da placa | DS3231, SSD1306, LM393 e fototransistor | |
@@ -88,7 +91,7 @@ Os mesmos números estão em `firmware/feeder-module/config.example.h`.
 
 | Componente | Qtd. | Situação |
 |---|---|---|
-| ESP32-C3 Super Mini (USB-C) | 1 | **já possui** (Tenstar, com o bootstrap de OTA) |
+| ESP32-C3 Super Mini (USB-C) | 1 | **já possui** (Tenstar, já com o firmware 1.0.0-beta) |
 | Servo MG90S (engrenagem metálica) | 1 | comprar |
 | Motor de vibração 1027 (moeda) — M1 | 1 | comprar |
 | Motor de vibração DC130P (pêndulo) — M2 | 1 | comprar |
@@ -199,6 +202,12 @@ GPIO0 ── 1 kΩ ──┬── base                  (M2: GPIO1 ── 470 �
   inteira pelo diodo. O 1N4148 aguenta ~200 mA, menos que o pico do DC130P.
 - **100 nF no motor:** corta o ruído das escovas, que de outro jeito chega ao
   I²C e ao enlace.
+- **Onde fica cada peça.** O BC337, o resistor de base e o pull-down ficam na
+  placa da base; o motor, no topo, a uns 30–50 cm de fio pela torre (§8). O
+  100 nF e o 1N5819 vão **na ponta do motor** — no conector do topo, o mais
+  perto possível dele: assim a corrente que circula no desligamento e o ruído
+  das escovas ficam lá em cima, e não descem pela torre colados nos fios do
+  sensor. Os fios de cada motor sobem trançados entre si.
 - **M1 (1027) é motor de 3 V.** Vai do 5 V com PWM em ~60%, nunca 5 V
   contínuo: sobretensão gasta a escova. PWM a ~20 kHz, inaudível.
 - **M2 (DC130P) entra com rampa de PWM:** movimento lento e gradual, nunca
@@ -227,8 +236,15 @@ LM393 alimentado em 3V3: a saída já sai em nível de 3,3 V
 - **O LED só acende durante a dosagem.** Dura mais, esquenta menos, e abre um
   **autoteste antes de cada refeição**: com o LED apagado, a saída precisa ler
   "bloqueado"; aceso, com o tubo vazio, "livre". Se uma das duas falhar —
-  LED queimado, desalinhado, luz entrando, comparador desajustado —, o
-  firmware não despeja às cegas: cancela e reporta (`FED` com `ok = 0`).
+  LED queimado, desalinhado, luz entrando, comparador desajustado, fio solto —,
+  a refeição **sai do mesmo jeito, contada pelo servo**: um movimento do slide
+  por grão pedido, sem repetir, e o `FED` vai com o motivo `SENSOR` (o app
+  avisa). Foi a escolha do Arthur em 2026-10-02: o peixe não fica sem comer
+  por causa de um sensor.
+- **No topo, junto do tubo:** o LM393, o fototransistor e o pull-up de 10 kΩ.
+  O sinal do fototransistor é fraco e de alta impedância — descer pela torre
+  ao lado dos fios dos motores o encheria de ruído. Pela torre desce a saída
+  do comparador, já digital. O resistor de 150 Ω do LED fica na base.
 - O trimpot do LM393 se ajusta uma vez, com o LED aceso: nível limpo com o
   feixe livre e o oposto com um grão de teste. Depois, trave-o com verniz.
 - O `GPIO3` é entrada do ADC1. Se um dia o comparador virar o elo fraco, o
@@ -260,9 +276,13 @@ GND ──┴──── GND (os dois)
   LIR2032 recarregável; "carregar" uma CR2032 a faz vazar ou estufar. Mesma
   nota do módulo principal (`pinagem-e-montagem-esp32.md`, §3).
 - Fios de I²C curtos (até ~20 cm) e sem cruzar com os dos motores. Os pull-ups
-  que vêm nos dois módulos bastam.
+  que vêm nos dois módulos bastam. Por isso o DS3231 e o display ficam **na
+  base**, ao lado da Super Mini — o I²C não sobe pela torre. O firmware usa
+  400 kHz.
 - **Tela apagada por padrão** (desgaste do OLED): acende ao tocar no botão,
-  fica 5 s e apaga, exceto no modo de programação (20 s de inatividade).
+  fica 5 s e apaga, exceto no modo de programação (20 s de inatividade). O
+  contraste fica abaixo do padrão, pelo mesmo motivo. Sem display, o módulo
+  funciona igual: o firmware percebe na partida e segue com o LED e o console.
 
 ---
 
@@ -281,8 +301,12 @@ GPIO5 ──┬── 1 kΩ ── (fio) ── botão ── GND
 - O **1 kΩ e o 100 nF** filtram o ruído que o fio do botão capta, seguram uma
   descarga eletrostática de quem toca o painel e limitam a corrente que o
   capacitor despeja nos contatos a cada toque.
-- O significado do toque (1×/2×/3×, toque longo para programar) é
-  comportamento de firmware.
+- O significado do toque é do firmware: 1× acende e passa a página, 2×
+  alimenta agora (dentro do limite de 3 refeições em 24 h), 3× testa o aviso
+  ao peixe, segurar 2 s programa. Tabela completa no
+  [README do firmware](../firmware/feeder-module/README.md#botão-e-tela).
+- O botão fica **na base**, junto do display: apertar o topo empurraria o
+  braço que está sobre o aquário.
 
 ---
 
@@ -316,35 +340,74 @@ Na ordem física do conector montado no principal (a mesma tabela de
 - **Os 12 V viajam brutos, de propósito:** com corrente menor no cabo, a queda
   é menor, e o buck local entrega 5 V limpos ali mesmo, longe do principal.
   Não mande 5 V pelo cabo.
-- **Protocolo:** uma linha ASCII por mensagem, a 9600 baud, na UART0. O
-  principal manda `PING` (a cada 2 s, só com o módulo presente), `FEED [grãos]`
-  e `CFG <h1> <h2> <grãos> <0|1>`. Este módulo responde `PONG <h1> <h2> <grãos>
-  <auto> <idade_s> <req> <conf> <ok>`, empurra `SCHEDULE <h1> <h2> <grãos>
-  <auto>` a cada reconexão e manda `FED <req> <conf> <ok>` depois de cada
-  alimentação. O lado do principal já está implementado e descarta a linha
+- **Protocolo** (firmware 2.1.0 do principal, 1.0.0-beta deste): uma linha
+  ASCII por mensagem, a 9600 baud. O principal manda `PING` (a cada 2 s, só
+  com o módulo presente), `FEED [grãos] [FORCE]` e `CFG <h1> <h2> <grãos>
+  <0|1>`. Este módulo responde `PONG <h1> <h2> <grãos> <auto> <idade_s> <req>
+  <conf> <ok> <refeições_24h>`, empurra `SCHEDULE` a cada reconexão e manda
+  `FED <req> <conf> <ok> <motivo> <origem>` depois de cada refeição e `DENIED
+  <motivo> <refeições_24h> <origem>` quando recusa uma (limite de 24 h,
+  ocupado, sem calibração, refeição perdida). Os dois lados descartam a linha
   inteira se um campo vier fora da faixa — referência completa em
-  `firmware/bettacare/feeder_link.h`.
+  `firmware/bettacare/feeder_link.h` e no
+  [README do firmware](../firmware/feeder-module/README.md#enlace-com-o-principal).
 - O log de boot do ROM sai pelo `GPIO21` a 115200 baud a cada reset do C3 e
   chega ao principal como ruído a 9600. O parser de lá o descarta; não precisa
-  suprimir.
+  suprimir. Depois do boot, o `GPIO21` é da UART1, e o console do sistema (a
+  UART0) não chega mais ao fio.
 
 ---
 
-## 8. Organização física
+## 8. Organização física: base, torre e topo
 
-- **Caixa acima da linha d'água** e fora da condensação da tampa, nunca sobre a
-  água aberta. Furos de ventilação embaixo e nas laterais, nunca em cima (é por
-  onde pinga). Um sachê de sílica-gel dentro, trocado quando saturar.
+O módulo é uma peça em três partes. Desenho, medidas e o que o modelador 3D
+precisa saber estão em [`modelagem-alimentador/`](./modelagem-alimentador/).
+
+| Parte | O que leva | Por quê |
+|---|---|---|
+| **Base**, na mesa | Super Mini, DS3231, display, botão, buck, diodos, PTC, BC337 e resistores, conector do cabo do principal, jack de 12 V | Tudo o que não precisa estar no alto: a eletrônica longe da umidade da água, o I²C curto, o botão e a tela à mão |
+| **Torre**, oca | Só os fios do topo | Leva o topo à altura da borda do aquário |
+| **Topo** | Reservatório com o M1, slide e servo, tubo de queda com o par IR e o LM393, bico sobre a água com o M2 na ponta | Só o que precisa estar sobre a água |
+
+- **Nada encosta no vidro nem na tampa do aquário.** O braço do topo passa por
+  cima da borda com folga, e a única coisa do módulo que toca o aquário é a
+  ponta do M2, na água — o aviso, de propósito. A vibração do M1, do servo e
+  do resto do M2 não chega ao vidro, onde viraria um zumbido para o peixe.
+- **Apoio:** sobre EVA macio colado sob a base, ou preso na lateral da mesa com
+  coxins de borracha. Os dois seguram o que sobra de vibração longe da mesa
+  — e, com ela, do móvel do aquário. Sobre EVA, a base precisa de lastro: o
+  topo fica em balanço sobre o aquário.
+
+**Fios pela torre** — doze, nenhum de I²C:
+
+| Fios | De → para | Na ponta de cima |
+|---|---|---|
+| Servo: 5 V, GND, sinal | base → servo | 470 µF/16 V e 100 nF no conector (o pico de corrente sai dali, não do fio) |
+| M1: 5 V e coletor | base → motor | 1N5819 e 100 nF; os dois fios trançados |
+| M2: 5 V e coletor | base → motor | 1N5819 e 100 nF; trançados; o trecho até a ponta, vedado (§3) |
+| LED IR: ânodo e cátodo | base (150 Ω) → LED | — |
+| LM393: 3V3, GND e saída | base → comparador | o fototransistor e o pull-up de 10 kΩ junto dele |
+
+O GND do LM393 e o cátodo do LED voltam ao terra de sinal da base; o do servo
+e o 5 V dos motores, ao ponto de terra de potência (§1). Para o servo, fio de
+24 AWG; o resto, 26 AWG.
+
+- **Caixa da base acima da linha d'água** e fora da condensação, com furos de
+  ventilação embaixo e nas laterais, nunca em cima (é por onde pinga). Um sachê
+  de sílica-gel dentro, trocado quando saturar.
 - **Placa perfurada com um conector JST-XH por periférico:** servo, M1, M2,
   LED IR, LM393, botão, I²C e o cabo do principal. Qualquer peça troca sem
-  ferro de solda. Etiquete cada conector.
+  ferro de solda. Etiquete cada conector. No topo, os mesmos conectores numa
+  plaquinha própria — o chicote da torre desconecta nas duas pontas.
 - **A Super Mini em barra de pinos fêmea**, não soldada direto: o conector USB-C
   é o ponto mais frágil da placa (o desta já tem mau contato), e trocar a placa
   inteira custa pouco. O dia a dia é por OTA; o USB fica para recuperação.
 - **Verniz acrílico** do lado da solda depois do roteiro de bancada, mascarando
   conectores, USB-C, trimpots e o botão BOOT.
 - **Alívio de tração** em todo cabo que entra na caixa (prensa-cabo ou
-  abraçadeira ancorada por dentro): é o puxão no cabo que solta a solda.
+  abraçadeira ancorada por dentro): é o puxão no cabo que solta a solda. O
+  chicote da torre, preso nas duas pontas: tirar o topo para limpar não pode
+  puxar fio.
 - **Reservatório fechado e seco.** Ração úmida empelota, e é o que M1 existe
   para combater, mas não precisa ganhar ajuda.
 
@@ -361,11 +424,15 @@ integrar.
 | 2 | Continuidade do conector de 4 vias, pino a pino, contra o lado do principal | Multímetro (continuidade) | Nenhuma inversão antes da primeira conexão |
 | 3 | Só o jack ligado: tensão no pino 2 do conector do cabo | Multímetro | **~0 V**: o diodo impede o jack de alimentar o cabo |
 | 4 | Ligar o módulo olhando o servo e os motores | Visual | Nenhum tranco no boot (os pull-downs funcionando) |
-| 5 | Ciclo do servo sem grão | Visual | Repouso → despejo completo, sem travar |
-| 6 | Saída do LM393: LED apagado; aceso com o feixe livre; aceso com um grão | Multímetro ou LED de teste | "Bloqueado", "livre", "bloqueado" — níveis limpos, sem oscilar |
-| 7 | M1 com PWM e M2 com rampa | Visual/tátil | Vibração perceptível, partida suave no M2 |
-| 8 | Scan do I²C | Monitor serial (USB) | `0x3C`, `0x57` e `0x68` |
+| 5 | `servo 40`, depois `calibrar` | Console | Repouso → despejo completo, sem travar, devagar |
+| 6 | `teste sensor` e `teste feixe 20`, passando grãos à mão | Console | Autoteste ok; cada grão contado uma vez, nenhum em dobro |
+| 7 | `teste m1` e `teste m2` | Visual/tátil | Vibração perceptível, partida suave no M2 |
+| 8 | `estado` | Console | Relógio ok (DS3231), tela ok |
 | 9 | USB-C ligado junto com o buck | Toque/termômetro | O 1N5819 não esquenta; a placa segue rodando |
+| 10 | `teste grao`, dez vezes, com um copo sob o bico | Console | Dez em dez: um grão por dose, visto pelo sensor |
+
+O console funciona pela USB ou pela rede, sem cabo (`POST /console`; ver o
+[README do firmware](../firmware/feeder-module/README.md#depuração-pela-rede)).
 
 **Faça a 1 e a 2 antes de qualquer outra coisa.** São as que evitam queimar um
 componente por engano de fiação.
@@ -374,10 +441,12 @@ componente por engano de fiação.
 
 ## Depois de montar
 
-1. Grave o firmware do módulo por OTA (o bootstrap já tem o ElegantOTA em
-   `http://<IP>/update`); o USB é só para recuperação.
-2. Calibre o servo em modo local (botão + monitor serial).
-3. Siga o roteiro de bancada com o módulo isolado.
+1. O firmware já está na placa (gravado por OTA em 2026-10-02); as
+   atualizações seguem por `http://<IP>/update`, e o USB fica para
+   recuperação.
+2. Siga o roteiro de bancada com o módulo isolado — ele inclui a calibração.
+3. Sem calibração gravada, nenhuma refeição sai, nem a da agenda: o módulo
+   recusa (`CALIBRAR`), o LED da placa pisca e o app avisa.
 4. Ligue o cabo de 4 vias no principal. No `/status` do principal,
    `feeder.present` vira verdadeiro em ~1 s, e `connected`, com o primeiro
    `PONG`. Tirando o cabo, os dois voltam a falso.
@@ -385,23 +454,24 @@ componente por engano de fiação.
 
 ---
 
-## O que o firmware do módulo precisa respeitar
+## O que o firmware faz com esta montagem
 
-Comportamentos que dependem desta montagem — o resto (ciclo do doseador,
-agenda, botão, OLED) está nas decisões registradas na memória do projeto.
+O que depende dos pinos e das peças daqui; o resto — agenda, limite de 24 h,
+recuperação, botão, tela — no [README do firmware](../firmware/feeder-module/README.md).
 
 - **Primeira coisa do `setup()`:** `GPIO0`, `1`, `4` e `10` como saída em
   nível baixo. Os pull-downs cobrem o reset; o firmware assume dali em diante.
-- **Enlace:** `Serial0` (UART0) a 9600 baud em `GPIO20` (RX) e `GPIO21` (TX);
-  console pelo USB nativo (`CDCOnBoot`).
-- **M1** em PWM a ~60% (motor de 3 V a partir de 5 V); **M2** com rampa de
-  subida e descida.
+- **Enlace:** `Serial1` (UART1) a 9600 baud em `GPIO20` (RX, com pull-up) e
+  `GPIO21` (TX); console pelo USB nativo (`CDCOnBoot`) ou pela rede.
+- **M1** em PWM a 60% e 20 kHz (motor de 3 V a partir de 5 V), com teto de 3 s
+  por pulso; **M2** com rampa de 1 s, 2 s firme e rampa de 1 s, teto de 6 s.
 - **LED IR** aceso só na dosagem, com o autoteste apagado/aceso antes de cada
-  refeição; falhou, cancela e manda `FED` com `ok = 0`.
-- **Servo:** liga o PWM, move, solta.
+  refeição; reprovado, a refeição sai contada pelo servo (`SENSOR`).
+- **Servo:** 5° a cada 10 ms, sem tranco nem na calibração; PWM só durante o
+  movimento, e solto depois que o slide assenta.
 - **Botão** amostrado por timer (2 ms; 30 ms para toque e soltura).
-- **OLED** apagado por padrão; **LED da placa** (`GPIO8`, aceso em baixo) livre
-  para status.
+- **OLED** a 400 kHz, apagado por padrão e com contraste reduzido; **LED da
+  placa** (`GPIO8`, aceso em baixo): aceso na refeição, piscando com aviso.
 
 ---
 

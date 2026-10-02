@@ -25,7 +25,20 @@ static const int LEDC_RESOLUTION = 8;       // 0–255
 // seguinte (margem grande demais, comia faixa útil de velocidade).
 static const int POT_MIN_ADC      = 110;                 // 0–4095
 static const int POT_MIN_EXIT_ADC = POT_MIN_ADC + 40;    // histerese de saída
-static const int POT_CHANGE_ADC   = 60;                  // movimento intencional
+/** Com o pot no comando: variação que vale como movimento e muda a velocidade. */
+static const int POT_CHANGE_ADC   = 60;
+/**
+ * Sem o pot no comando — depois do boot, de um comando do app ou da virada da
+ * agenda —, quanto ele precisa andar para tomar o comando de volta. Em duas
+ * amostras seguidas: um pico de ruído do ADC não basta, e um giro de mão anda
+ * centenas de pontos em menos de um segundo.
+ */
+static const int POT_TAKEOVER_ADC = 150;
+static const uint8_t POT_TAKEOVER_SAMPLES = 2;
+/** Conversões por amostra: a média corta o ruído do ADC sem atrasar a resposta. */
+static const int POT_READS = 8;
+/** O evento de velocidade sai quando a mão para, não a cada degrau do giro. */
+static const unsigned long POT_SETTLE_MS = 1000;
 
 // ── Estados ─────────────────────────────────────────────────────────────────
 enum FanMode      { FAN_MODE_AUTO, FAN_MODE_MANUAL_OFF, FAN_MODE_MANUAL_SPEED };
@@ -64,15 +77,15 @@ static int           _escalation_floor_pct = 0;
 static float         _escalation_ref_temp  = 0.0f;
 static unsigned long _escalation_ref_ms    = 0;
 
-// Calibração do pot
-static bool _pot_seen_min     = false;
-static bool _pot_calibrated   = false;
-static int  _pot_adc_prev     = -1;
-static int  _pot_filtered_adc = -1;
-static bool _pot_min_latched  = false;
-/** Cadência de amostragem do ADC — ver o comentário em `fan_update()`. */
-static const unsigned long POT_SAMPLE_INTERVAL_MS = 500;
-static unsigned long _pot_sample_ms = 0;
+// Potenciômetro — ver o comentário em `fan_update()`
+static bool          _pot_armed       = false;   // o pot está no comando?
+static int           _pot_adc         = -1;      // última amostra (média de POT_READS)
+static int           _pot_ref         = -1;      // referência lenta, enquanto desarmado
+static uint8_t       _pot_takeover    = 0;       // amostras seguidas longe da referência
+static int           _pot_applied     = -1;      // leitura que gerou a velocidade atual
+static bool          _pot_min_latched = false;
+static bool          _pot_log_pending = false;
+static unsigned long _pot_changed_ms  = 0;
 
 static bool _temp_failsafe_active = false;
 
@@ -99,14 +112,26 @@ static void _set_fan_power(bool on) {
 static void _apply_speed(int pct) {
   pct = constrain(pct, 0, 100);
   _speed_pct = pct;
-  _set_fan_power(pct > 0);
   // O buffer MOSFET do PWM (pinagem-e-montagem-esp32.md §7, caso de 5V)
   // inverte o sinal: GPIO em alto liga o MOSFET, que puxa a linha da
   // ventoinha pra baixo — o oposto do dreno aberto direto. Sem o
   // complemento aqui, 100% comandado chega como 0% na ventoinha (ela gira no
   // mínimo) e 0% chega como 100% (ela nunca desliga) — era exatamente esse o
   // aviso que o documento já fazia e que este firmware nunca implementou.
-  ledcWrite(FAN_LEDC_TARGET, (int)((long)(100 - pct) * 255L / 100L));
+  //
+  // **Com a energia cortada, a linha fica solta** (duty 0: MOSFET do buffer
+  // desligado). O corte é no retorno, o pino 1; o complemento de 0% deixava o
+  // buffer conduzindo o tempo todo, com o pino 4 preso no GND — e a
+  // eletrônica da ventoinha, sem o próprio terra, voltava por ele. Sobravam
+  // 3 a 7 V nos terminais, e ela girava aos trancos, cadenciados, mesmo
+  // "desligada" (bancada, 2026-10-02).
+  if (pct > 0) {
+    ledcWrite(FAN_LEDC_TARGET, (int)((long)(100 - pct) * 255L / 100L));
+    _set_fan_power(true);
+  } else {
+    _set_fan_power(false);
+    ledcWrite(FAN_LEDC_TARGET, 0);
+  }
   if (pct == 0) {
     // Zera a vigilância do tacômetro: sem PWM, rotação zero é o esperado.
     _stall_since_ms = 0;
@@ -123,18 +148,28 @@ static int _auto_speed(float delta) {
   return FAN_SPEED_MAX;
 }
 
-static void _reset_pot_calibration() {
-  _pot_seen_min     = false;
-  _pot_calibrated   = false;
-  _pot_adc_prev     = -1;
-  _pot_filtered_adc = -1;
-  _pot_min_latched  = false;
-  _pot_sample_ms    = 0;
+/** Média de `POT_READS` conversões: corta o ruído sem o atraso de um filtro. */
+static int _read_pot() {
+  uint32_t soma = 0;
+  for (int i = 0; i < POT_READS; i++) soma += (uint32_t)analogRead(PIN_POT);
+  return (int)(soma / POT_READS);
+}
+
+/**
+ * Tira o comando do pot: a posição física atual deixa de valer até ele ser
+ * girado de novo. É o que impede o pot de desfazer, no ciclo seguinte, um
+ * comando do app ou a volta ao automático da agenda — o último comando vence.
+ */
+static void _disarm_pot() {
+  _pot_armed       = false;
+  _pot_ref         = -1;   // a próxima amostra vira a referência
+  _pot_takeover    = 0;
+  _pot_applied     = -1;
+  _pot_log_pending = false;
 }
 
 static void _enter_manual_off() {
   _mode = FAN_MODE_MANUAL_OFF;
-  _reset_pot_calibration();
   _temp_failsafe_active = false;
   _apply_speed(0); // já corta a energia — ver o comentário em `_apply_speed()`
 }
@@ -160,13 +195,14 @@ void fan_init() {
   pinMode(PIN_FAN_POWER, OUTPUT);
   digitalWrite(PIN_FAN_POWER, HIGH);
   _tach_sample_ms = millis();
+  _disarm_pot();
   _apply_speed(0);
 }
 
 void fan_on_schedule_reset() {
   _mode    = FAN_MODE_AUTO;
   _auto_st = FAN_AUTO_IDLE;
-  _reset_pot_calibration();
+  _disarm_pot();
   _temp_failsafe_active = false;
   _escalation_floor_pct = 0;
   // Não mexe na velocidade (nem na energia) agora: `fan_update()` decide no
@@ -175,6 +211,7 @@ void fan_on_schedule_reset() {
 
 void fan_set_speed(int percent) {
   percent = constrain(percent, 0, 100);
+  _disarm_pot();
   if (percent == 0) {
     _enter_manual_off();
     event_log(SEV_INFO, COMP_FAN, "fan.off", "Ventoinha desligada por comando");
@@ -182,16 +219,17 @@ void fan_set_speed(int percent) {
   }
   _last_manual_pct = percent;
   _mode = FAN_MODE_MANUAL_SPEED;
+  _temp_failsafe_active = false;
   _apply_speed(percent); // > 0, então já religa a energia
   event_log(SEV_INFO, COMP_FAN, "fan.on",
             "Velocidade fixada em %d%% por comando", percent);
 }
 
 void fan_set_mode_auto(bool automatico) {
+  _disarm_pot();
   if (automatico) {
     _mode    = FAN_MODE_AUTO;
     _auto_st = FAN_AUTO_IDLE;
-    _reset_pot_calibration();
     _escalation_floor_pct = 0;
     // Não aplica velocidade aqui — `fan_update()` decide (e cuida da
     // energia) no próximo ciclo, igual ao `fan_on_schedule_reset()`.
@@ -199,6 +237,7 @@ void fan_set_mode_auto(bool automatico) {
               "Controle automatico restaurado por comando");
   } else {
     _mode = FAN_MODE_MANUAL_SPEED;
+    _temp_failsafe_active = false;
     _apply_speed(_last_manual_pct);
     event_log(SEV_INFO, COMP_FAN, "fan.mode_manual",
               "Modo manual por comando (%d%%)", _last_manual_pct);
@@ -209,7 +248,7 @@ int  fan_get_speed_percent() { return _speed_pct; }
 bool fan_is_on()             { return _speed_pct > 0; }
 int  fan_get_rpm()           { return _rpm; }
 
-int      fan_get_pot_raw_adc()     { return _pot_filtered_adc < 0 ? 0 : _pot_filtered_adc; }
+int      fan_get_pot_raw_adc()     { return _pot_adc < 0 ? 0 : _pot_adc; }
 uint32_t fan_get_tach_pulses_raw() { return _tach_pulses_raw; }
 
 FanModeReport fan_get_mode_report() {
@@ -295,41 +334,48 @@ void fan_update() {
 
   // ── 1. Potenciômetro ──────────────────────────────────────────────────────
   //
-  // Amostrado a 2×/s, não a cada volta do loop. Um potenciômetro é girado por
-  // uma mão humana: 500 ms é imperceptível como resposta, e corta metade das
-  // conversões de ADC — que mantêm o conversor ativo sem necessidade.
-  if (_pot_sample_ms == 0 || agora - _pot_sample_ms >= POT_SAMPLE_INTERVAL_MS) {
-    _pot_sample_ms = agora;
-    int pot_raw = analogRead(PIN_POT);
-    if (_pot_filtered_adc < 0) {
-      _pot_filtered_adc = pot_raw;
+  // Lido a cada volta do loop (200 ms), na média de 8 conversões. Antes era
+  // uma leitura a cada 500 ms com um filtro que levava ~6 s para chegar ao
+  // valor novo: girar até o fim fazia a ventoinha "escorregar" de velocidade
+  // por segundos, e o desligar no mínimo demorava o mesmo tanto.
+  //
+  // E antes o pot só tomava o comando depois de ir ao mínimo e subir — de
+  // novo a cada boot (OTA incluída), comando do app e virada da agenda. Girar
+  // de qualquer outro ponto não fazia nada, e parecia que a ventoinha não o
+  // respeitava. Agora basta girar: andou mais que `POT_TAKEOVER_ADC` da
+  // posição em que estava, ele assume, e a posição vale na mesma volta.
+  int pot = _read_pot();
+  _pot_adc = pot;
+
+  if (!_pot_armed) {
+    if (_pot_ref < 0) {
+      _pot_ref = pot;
+    } else if (abs(pot - _pot_ref) > POT_TAKEOVER_ADC) {
+      if (++_pot_takeover >= POT_TAKEOVER_SAMPLES) {
+        _pot_armed       = true;
+        _pot_applied     = -1;   // aplica já, nesta volta
+        _pot_min_latched = pot <= POT_MIN_ADC;
+      }
     } else {
-      // Filtro exponencial simples contra o ruído do ADC.
-      _pot_filtered_adc = (_pot_filtered_adc * 3 + pot_raw) / 4;
+      _pot_takeover = 0;
+      // Referência lenta: absorve a deriva do ADC com a temperatura, nunca um
+      // giro de mão.
+      _pot_ref += (pot - _pot_ref) / 32;
     }
   }
-  if (_pot_filtered_adc < 0) return;   // ainda sem primeira amostra
 
-  int pot_adc = _pot_filtered_adc;
-  if (!_pot_min_latched) {
-    if (pot_adc <= POT_MIN_ADC) _pot_min_latched = true;
-  } else if (pot_adc >= POT_MIN_EXIT_ADC) {
-    _pot_min_latched = false;
-  }
-  bool pot_at_min = _pot_min_latched;
-
-  if (!_pot_calibrated) {
-    // Calibração: só passa a valer depois de o usuário levar ao mínimo e subir.
-    if (pot_at_min) {
-      _pot_seen_min = true;
-    } else if (_pot_seen_min) {
-      _pot_calibrated = true;
-      _pot_adc_prev   = pot_adc;
+  if (_pot_armed) {
+    if (!_pot_min_latched) {
+      if (pot <= POT_MIN_ADC) _pot_min_latched = true;
+    } else if (pot >= POT_MIN_EXIT_ADC) {
+      _pot_min_latched = false;
     }
-  } else {
-    if (pot_at_min) {
+
+    if (_pot_min_latched) {
       if (_mode != FAN_MODE_MANUAL_OFF) {
+        // Sem `_disarm_pot()`: quem desligou foi o pot, e ele segue no comando.
         _enter_manual_off();
+        _pot_log_pending = false;
         // Código próprio da família `pot.*` (UPGRADE/03, F12): antes usava
         // `fan.off`, e quem filtrasse por componente `pot` via `code=fan.*`,
         // ou agregasse por código, misturava ação do potenciômetro com ação
@@ -337,14 +383,25 @@ void fan_update() {
         event_log(SEV_INFO, COMP_POT, "pot.fan_off",
                   "Ventoinha desligada pelo potenciometro");
       }
-    } else if (_pot_adc_prev < 0 || abs(pot_adc - _pot_adc_prev) > POT_CHANGE_ADC) {
-      _pot_adc_prev = pot_adc;
-      int novo = constrain((int)map(pot_adc, POT_MIN_ADC, 4095, 1, 100), 1, 100);
+      _pot_applied = pot;
+    } else if (_mode != FAN_MODE_MANUAL_SPEED || _pot_applied < 0 ||
+               abs(pot - _pot_applied) > POT_CHANGE_ADC) {
+      _pot_applied = pot;
+      int novo = constrain((int)map(pot, POT_MIN_ADC, 4095, 1, 100), 1, 100);
       _last_manual_pct = novo;
       _mode = FAN_MODE_MANUAL_SPEED;
+      _temp_failsafe_active = false;
       _apply_speed(novo); // > 0, então já religa a energia
+      _pot_log_pending = true;
+      _pot_changed_ms  = agora;
+    }
+
+    // Um evento quando a mão para, não um a cada degrau do giro — eram 184
+    // `pot.fan_speed` num só dia de bancada.
+    if (_pot_log_pending && agora - _pot_changed_ms >= POT_SETTLE_MS) {
+      _pot_log_pending = false;
       event_log(SEV_INFO, COMP_POT, "pot.fan_speed",
-                "Velocidade ajustada para %d%% pelo potenciometro", novo);
+                "Velocidade ajustada para %d%% pelo potenciometro", _speed_pct);
     }
   }
 

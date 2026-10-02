@@ -231,6 +231,22 @@ módulo nunca tinha respondido.
 migration 0009 limpou, uma vez, a agenda 00h/00h que os zeros tinham gravado
 em produção.
 
+**Refeições em 24 h (v1.2.0, firmware 2.1.0).** O bloco traz `meals_24h`:
+quantas refeições o módulo contou nas últimas 24 h, somando agenda, botão e
+app. A migration 0011 acrescenta a coluna `device_state.feeder_meals_24h`, e o
+`/overview` a devolve em `state.feeder.meals_24h` — é o "2 de 3" do app. O
+limite (`FEEDER_MEALS_PER_24H` = 3, no contrato) é do **módulo**, não do
+servidor: o servidor só repassa o `feeder.feed_now` com `force: true` quando o
+usuário confirma o "alimentar mesmo assim".
+
+Três avisos do alimentador viram **push**, além de irem para os Registros:
+`feeder.limit_reached` (uma refeição — da agenda, do botão ou do app —
+recusada pelo limite), `feeder.hopper_empty` (nenhum grão caiu: reservatório
+vazio ou doseador travado) e `feeder.sensor_fault` (autoteste do sensor
+reprovado; a refeição saiu contada pelo servo). Uma notificação por código: a
+nova substitui a anterior. `feeder.limit_overridden`, `feeder.feed_denied` e
+`feeder.meal_missed` ficam só nos Registros.
+
 ---
 
 ## Verificado de ponta a ponta

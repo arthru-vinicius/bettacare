@@ -434,3 +434,59 @@ Testes: 54 do servidor (6 novos), 30 do contrato, 115 de host do firmware (41
 novos: 21 do termômetro, 20 da ventoinha). O 2.0.3 está gravado no ESP32 da
 bancada; desligada, a ventoinha ficou com o tacômetro em 0 rpm por um minuto
 inteiro.
+
+## O módulo alimentador inteiro, em beta (v1.2.0, 2026-10-02)
+
+O Arthur pediu o firmware do módulo "por completo", visando segurança,
+longevidade e qualidade das peças, e respondeu às quatro decisões que nenhum
+documento cobria:
+
+| Pergunta | Decisão |
+|---|---|
+| O que faz o 2× no botão? | Alimenta direto (1× acende e passa a página, 3× testa o aviso, segurar programa) |
+| Refeição perdida com o módulo desligado | Recupera até 4 h de atraso, sem colar em outra refeição |
+| Quanto o peixe pode comer em 24 h? | No máximo 3 refeições, somando agenda, botão e app. O botão nunca passa; o app passa com um "alimentar mesmo assim" |
+| Sensor de grãos reprovado no autoteste | Alimenta contando pelo servo, e avisa |
+
+**O limite atravessa o sistema inteiro.** Contrato (`FEEDER_MEALS_PER_24H`,
+`force` no `feeder.feed_now`, seis códigos novos), servidor (migration 0011,
+aditiva: `device_state.feeder_meals_24h`; push para limite, reservatório vazio
+e sensor), PWA ("N de 3 refeições" e a folha do "alimentar mesmo assim") e o
+firmware **2.1.0** do principal (`FEED ... FORCE`, `DENIED`, refeições no
+`PONG`). O 2.1.0 está compilado, não gravado: o Arthur segue testando o 2.0.3.
+
+**Firmware do módulo, 1.0.0-beta** (`firmware/feeder-module/`, README lá
+dentro). O doseador é uma máquina de estados sem espera; cada motor tem teto
+absoluto à parte dela; o servo anda 5° a cada 10 ms em todo movimento; a
+refeição é gravada na NVS antes do primeiro movimento; a agenda não roda sem
+hora conferida. Três coisas apareceram só revisando o código pronto, antes de
+qualquer hardware:
+
+| Achado | Correção |
+|---|---|
+| O enlace na UART0 dividia o fio com o console do ESP-IDF: um log de erro sairia no meio de um `FED` | UART1 nos mesmos pinos; o console da UART0 não chega mais ao fio |
+| Mudar só os grãos na hora de uma refeição a fazia sumir: a agenda nova marcava os dois horários como servidos | Só o que mudou é marcado — horário trocado, ou o automático religado |
+| Duas refeições recuperáveis seguidas saíam coladas, e uma recuperada podia cair logo depois do 2× no botão | A recuperada não fica a menos de 4 h de refeição nenhuma; com outra na hora, a da hora tem a vez |
+
+E um da bancada: com o sensor desconectado, a entrada flutuava, e o autoteste
+podia passar por acaso — pull-up interno, e o fio solto reprova.
+
+**Depuração sem cabo.** A placa da bancada não fica no USB do PC: o log
+também vai para uma RAM que sobrevive a reinício (`GET /log`), os comandos do
+console vão pela rede (`POST /console`), e um receptor no Docker deste PC
+acompanha tudo. O UDP do módulo para o PC é barrado pelo firewall do Windows
+(a regra do Docker Desktop é só para redes públicas), então o receptor busca
+o `/log`.
+
+**Gravado por OTA** na Super Mini (`192.168.100.47`), ainda sem nada ligado:
+boot, NTP, DS3231 e tela ausentes reconhecidos, `teste sensor` reprovando sem
+o sensor, console pela rede e o log atravessando um reinício.
+
+**A estrutura impressa** ganhou um diretório para o modelador 3D,
+`docs/modelagem-alimentador/`: base na mesa (eletrônica, display e botão),
+torre oca (só fios), topo ao lado do aquário (reservatório, slide, sensor) e
+uma calha inclinada forrada de PTFE até a água, com o M2 na ponta. Nada
+encosta no vidro.
+
+Testes: 32 do contrato; 127 de host do firmware principal; 126 de host do
+firmware do módulo (agenda 38, doseador 48, protocolo 28, gestos 12).

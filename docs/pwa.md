@@ -35,6 +35,12 @@ Revisado em 2026-10-02 com o usuário usando o app de verdade:
   detalhes ao toque, e o download das planilhas com os mesmos filtros.
 - **Saúde** ganhou o ajuste "Atualização do aquário" (1, 2, 3 ou 5 s), que
   grava `telemetry_interval_ms` na configuração.
+- **Alimentador** mostra "N de 3 refeições nas últimas 24 h", em âmbar com
+  "limite atingido" quando chega a 3. Nesse caso, "Alimentar agora" não
+  manda nada direto: abre a folha "Limite de refeições atingido", que explica
+  o risco e oferece "Alimentar mesmo assim" (`feeder.feed_now` com `force:
+  true`). É o único caminho para passar do limite — pelo botão do módulo, não
+  há.
 
 Os editores são folhas que sobem do rodapé (`components/Sheet.tsx`),
 renderizadas por portal no `body`: as telas animam com `transform`, e dentro

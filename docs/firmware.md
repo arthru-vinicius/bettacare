@@ -157,6 +157,29 @@ Com o servidor fora do ar, o intervalo cresce até 30 s. Sem isso seriam 20
 requisições por minuto sem propósito, cada uma com timeout de 4 s. O aquário
 segue operando sozinho e volta a falar quando houver com quem.
 
+### O limite de refeições do alimentador (2.1.0)
+
+O módulo do alimentador conta as refeições de 24 h — agenda, botão e app — e
+recusa a quarta. O lado de cá do enlace acompanha o protocolo dele
+(`feeder_link.h` tem a referência; o firmware do módulo, em
+`firmware/feeder-module/`, o [README de lá](../firmware/feeder-module/README.md)):
+
+- **`FEED [grãos] [FORCE]`.** O `feeder.feed_now` com `force: true` — o
+  "alimentar mesmo assim" do app — vai com `FORCE`, e registra
+  `feeder.limit_overridden`. Sem `FORCE`, o módulo decide.
+- **`PONG` com as refeições em 24 h** no fim; vão no bloco `feeder` do POST
+  como `meals_24h`. Um módulo antigo, sem o campo, continua aceito.
+- **`FED` com motivo e origem.** `VAZIO` vira `feeder.hopper_empty` (erro),
+  `SENSOR` vira `feeder.sensor_fault` — a refeição saiu, contada pelo servo —,
+  e a mensagem diz de onde veio o pedido (agenda, recuperação, botão, app).
+- **`DENIED`**, a recusa: `LIMITE` vira `feeder.limit_reached`, `PERDIDA`
+  (refeição da agenda que não deu para recuperar) vira `feeder.meal_missed`, e
+  `OCUPADO`, `CALIBRAR` ou um motivo que este firmware ainda não conhece viram
+  `feeder.feed_denied`, com o motivo na mensagem. Nada de recusa silenciosa.
+
+Os campos novos são opcionais dos dois lados: firmware 2.1.0 com módulo antigo,
+ou o contrário, só perdem a informação nova.
+
 ### A ventoinha desligada de verdade, e o potenciômetro que responde (2.0.3)
 
 **Desligar solta a linha de PWM.** O corte de energia é no retorno (pino 1,
@@ -236,8 +259,8 @@ Na bancada, `/status` mostra `feeder.present`: falso com o conector vazio.
 ## Verificado
 
 - **Compila** contra ESP32 core 3.3.8 e ArduinoJson 7.4.3, sem nenhum aviso nos
-  arquivos do projeto mesmo com `--warnings all`: 1.138.554 bytes (86% do
-  flash), 57 KB de RAM global (17%).
+  arquivos do projeto mesmo com `--warnings all`: 1.140.578 bytes (87% do
+  flash) na 2.1.0, 57 KB de RAM global (17%).
 - **Os quatro formatos de corpo** que o firmware emite (normal, sensor ausente,
   RTC sumido, com `ack` de recusa e eventos) validam contra
   `telemetryRequestSchema`. Entre 391 e 777 bytes.
@@ -260,9 +283,11 @@ Na bancada, `/status` mostra `feeder.present`: falso com o conector vazio.
   montada.
 - **Testes de host** (g++ no PC, com o `.cpp` de produção e stubs mínimos de
   Wire/RTClib/Serial/GPIO/ADC/LEDC/DallasTemperature): 37 verificações da
-  automação por horário e da leitura do DS3231; 37 do enlace com o
+  automação por horário e da leitura do DS3231; 49 do enlace com o
   alimentador — parser, presença no fio, nenhum `PING` sem módulo, desconexão
-  na hora com o cabo arrancado e o 0x00 do *break*; 21 do termômetro — o
+  na hora com o cabo arrancado, o 0x00 do *break*, e o limite de refeições
+  (`FEED` com `FORCE`, `PONG` com as refeições, cada `DENIED` com o seu
+  evento); 21 do termômetro — o
   -48,00 de produção descartado com o scratchpad, salto relido e descartado,
   mudança real confirmada, 85,0 de power-on e sensor perdido por leituras
   impossíveis; e 20 da ventoinha — desligar soltando a linha de PWM, o pot
@@ -282,8 +307,9 @@ Na bancada, `/status` mostra `feeder.present`: falso com o conector vazio.
 - a série de heap ao longo de dias: a planilha de medições (Registros) traz a
   memória livre; o maior bloco alocável fica em `telemetry.max_alloc_heap`.
   Maior bloco caindo junto com o livre é fragmentação;
-- o enlace com o módulo do alimentador, cujo firmware ainda não existe — o lado
-  do ESP32 principal só foi exercitado por teste de host.
+- o enlace com o módulo do alimentador ao vivo: o firmware do módulo existe
+  (1.0.0-beta, 2026-10-02) e roda na placa dele, mas o mecanismo ainda não foi
+  montado, e os dois lados do enlace só se encontraram em teste de host.
 
 **Testar em bancada antes de gravar no que está no aquário.** Para investigar
 um comportamento estranho, há o firmware de debug em `firmware/bettacare-debug`
@@ -296,5 +322,5 @@ um comportamento estranho, há o firmware de debug em `firmware/bettacare-debug`
    `DEVICE_INGEST_TOKEN` do servidor), `API_AUTH_TOKEN` e `OTA_PASSWORD`.
 2. **Rotacionar a senha de OTA.** A do repositório antigo esteve versionada em
    texto claro e deve ser considerada comprometida.
-3. O flash está em 86%. Há folga para OTA (as duas partições de app têm o mesmo
+3. O flash está em 87%. Há folga para OTA (as duas partições de app têm o mesmo
    tamanho), mas pouca para crescer — vale ficar de olho.

@@ -1,5 +1,6 @@
 #include "wifi_manager.h"
 #include "config.h"
+#include "debuglog.h"
 #include <WiFi.h>
 
 static unsigned long _last_attempt_ms = 0;
@@ -11,18 +12,18 @@ void wifi_connect() {
   WiFi.setHostname(DEVICE_ID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   _last_attempt_ms = millis();
-  Serial.printf("[WiFi] Conectando a \"%s\"...\n", WIFI_SSID);
+  Log.printf("[WiFi] Conectando a \"%s\"...\n", WIFI_SSID);
 }
 
 void wifi_check_reconnect() {
   bool connected = WiFi.status() == WL_CONNECTED;
 
   if (connected && !_was_connected) {
-    Serial.printf("[WiFi] Conectado. IP: %s   MAC: %s\n",
+    Log.printf("[WiFi] Conectado. IP: %s   MAC: %s\n",
                   WiFi.localIP().toString().c_str(), WiFi.macAddress().c_str());
   } else if (!connected && _was_connected) {
     _reconnect_count++;
-    Serial.println("[WiFi] Conexao perdida.");
+    Log.println("[WiFi] Conexao perdida.");
   }
   _was_connected = connected;
 
@@ -30,7 +31,7 @@ void wifi_check_reconnect() {
   if (millis() - _last_attempt_ms < WIFI_RECONNECT_INTERVAL_MS) return;
 
   _last_attempt_ms = millis();
-  Serial.println("[WiFi] Tentando reconectar...");
+  Log.println("[WiFi] Tentando reconectar...");
   WiFi.disconnect();
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 }

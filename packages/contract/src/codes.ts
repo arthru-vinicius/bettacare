@@ -488,6 +488,12 @@ export const EVENT_CODES = {
     label: "Pedido de alimentação recusado pelo módulo",
     hint: "Já havia outra refeição em andamento. Tente de novo em alguns segundos.",
   },
+  "feeder.meal_missed": {
+    comp: "feeder",
+    sev: "warn",
+    label: "Refeição da agenda perdida",
+    hint: "O módulo estava desligado, ou sem hora, no horário marcado. Ele recupera uma refeição atrasada até 4 h, desde que a próxima esteja a mais de 4 h; fora disso, pula.",
+  },
   "feeder.sensor_fault": {
     comp: "feeder",
     sev: "warn",

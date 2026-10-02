@@ -43,7 +43,8 @@
  *
  *   motivo do FED     OK | SENSOR (autoteste falhou, contou pelo servo) | VAZIO (nenhum grão caiu)
  *   motivo do DENIED  LIMITE (3 refeições em 24 h) | OCUPADO (outra refeição em andamento)
- *                     | CALIBRAR (doseador sem calibração); outro vira aviso genérico
+ *                     | CALIBRAR (doseador sem calibração) | PERDIDA (refeição da
+ *                     agenda que não deu para recuperar); outro vira aviso genérico
  *   origem            AGENDA | RECUP | BOTAO | APP | FORCADO
  *
  * Os campos entre colchetes chegaram com o firmware 1.0 do módulo; um módulo

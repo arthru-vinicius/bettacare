@@ -311,6 +311,9 @@ static void _handle_line(char* line) {
     } else if (strcmp(motivo, "OCUPADO") == 0) {
       event_log(SEV_WARN, COMP_FEEDER, "feeder.feed_denied",
                 "Alimentacao %s recusada: outra refeicao em andamento", de);
+    } else if (strcmp(motivo, "PERDIDA") == 0) {
+      event_log(SEV_WARN, COMP_FEEDER, "feeder.meal_missed",
+                "Refeicao %s perdida: o modulo estava desligado ou sem hora no horario marcado", de);
     } else if (strcmp(motivo, "CALIBRAR") == 0) {
       event_log(SEV_WARN, COMP_FEEDER, "feeder.feed_denied",
                 "Alimentacao %s recusada: o doseador ainda nao foi calibrado", de);

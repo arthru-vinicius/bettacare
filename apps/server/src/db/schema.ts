@@ -227,6 +227,8 @@ export const deviceState = pgTable("device_state", {
   feederLastFeedRequested: smallint("feeder_last_feed_requested"),
   feederLastFeedConfirmed: smallint("feeder_last_feed_confirmed"),
   feederLastFeedOk: boolean("feeder_last_feed_ok"),
+  /** Refeições nas últimas 24 h, como o módulo contou no último contato. */
+  feederMeals24h: smallint("feeder_meals_24h"),
 });
 
 // ── component_status ──────────────────────────────────────────────────────

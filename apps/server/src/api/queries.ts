@@ -122,6 +122,7 @@ export async function getOverview(db: Db, deviceId: string) {
                   last_feed_requested: state.feederLastFeedRequested ?? undefined,
                   last_feed_confirmed: state.feederLastFeedConfirmed ?? undefined,
                   last_feed_ok: state.feederLastFeedOk ?? undefined,
+                  meals_24h: state.feederMeals24h ?? undefined,
                 },
           uptime_ms: state.uptimeMs,
           updated_at: state.updatedAt.toISOString(),

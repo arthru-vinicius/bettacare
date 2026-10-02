@@ -1,6 +1,7 @@
 import {
   COMPONENT_LABELS,
   DEFAULT_CONFIG,
+  describeEventCode,
   deviceConfigSchema,
   HEALTH_STATUS_LABELS,
   TEMP_PLAUSIBLE_C,
@@ -197,6 +198,7 @@ export async function processTelemetry(
 
       await recordHealth(tx, body, now, lightDesired, alerts);
       await recordDeviceEvents(tx, body, now);
+      alertsForDeviceEvents(body, alerts);
       await trackUsualRange(
         tx,
         body.device_id,
@@ -278,6 +280,7 @@ export async function processTelemetry(
         feederLastFeedConfirmed:
           f?.last_feed_confirmed ?? previous?.feederLastFeedConfirmed ?? null,
         feederLastFeedOk: f?.last_feed_ok ?? previous?.feederLastFeedOk ?? null,
+        feederMeals24h: f?.meals_24h ?? previous?.feederMeals24h ?? null,
       };
 
       await upsertState(tx, body, now, {
@@ -770,6 +773,31 @@ async function recordHealth(
   }
 }
 
+/**
+ * Eventos do dispositivo que pedem ação de alguém e merecem tocar o celular —
+ * os do alimentador (v1.2.0). O título vem do catálogo do contrato; o corpo é
+ * a mensagem do firmware, com o detalhe. Uma notificação por código: a nova
+ * substitui a anterior em vez de empilhar.
+ */
+const EVENTOS_QUE_ALERTAM = new Set([
+  "feeder.limit_reached",
+  "feeder.hopper_empty",
+  "feeder.sensor_fault",
+]);
+
+function alertsForDeviceEvents(body: TelemetryRequest, alerts: PushMessage[]): void {
+  for (const e of body.events) {
+    if (!EVENTOS_QUE_ALERTAM.has(e.code)) continue;
+    const info = describeEventCode(e.code);
+    alerts.push({
+      title: `Alimentador: ${(info?.label ?? e.code).toLowerCase()}`,
+      body: e.msg,
+      tag: e.code,
+      requireInteraction: e.sev === "error",
+    });
+  }
+}
+
 async function recordDeviceEvents(
   tx: Tx,
   body: TelemetryRequest,
@@ -962,6 +990,7 @@ async function upsertState(
       feederLastFeedRequested: number | null;
       feederLastFeedConfirmed: number | null;
       feederLastFeedOk: boolean | null;
+      feederMeals24h: number | null;
     };
   },
 ): Promise<void> {

@@ -78,6 +78,13 @@
       "when": 1790967609107,
       "tag": "0010_temperatura_impossivel",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790972806129,
+      "tag": "0011_refeicoes_24h",
+      "breakpoints": true
     }
   ]
 }

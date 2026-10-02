@@ -145,6 +145,32 @@ describe(
       assert.equal(f?.auto_enabled, true);
     });
 
+    it("refeições em 24 h: gravadas, no overview, e preservadas sem o bloco", async () => {
+      await post(DEVICE, 13, em(13), {
+        feeder: { connected: true, hour1: 7, hour2: 19, grains_per_feeding: 4, auto_enabled: true, meals_24h: 2 },
+      });
+      assert.equal((await getOverview(rt.db, DEVICE))?.state?.feeder?.meals_24h, 2);
+      await post(DEVICE, 14, em(14)); // módulo fora do fio: sem bloco
+      assert.equal((await getOverview(rt.db, DEVICE))?.state?.feeder?.meals_24h, 2, "último conhecido");
+    });
+
+    it("limite atingido, reservatório vazio e sensor com defeito tocam o celular", async () => {
+      const r = await post(DEVICE, 15, em(15), {
+        events: [
+          { sev: "warn", comp: "feeder", code: "feeder.limit_reached", msg: "Limite de 3 refeicoes em 24 h: pedido do botao recusado" },
+          { sev: "info", comp: "feeder", code: "feeder.fed_ok", msg: "Alimentacao concluida: 5 graos" },
+          { sev: "error", comp: "feeder", code: "feeder.hopper_empty", msg: "Nenhum grao caiu em 3 tentativas" },
+        ],
+      });
+      assert.deepEqual(
+        r.alerts.map((a) => a.tag),
+        ["feeder.limit_reached", "feeder.hopper_empty"],
+        "a alimentação normal não notifica",
+      );
+      assert.match(r.alerts[0]!.title, /limite de refeições/);
+      assert.equal(r.alerts[1]!.requireInteraction, true, "o que é erro fica até alguém ver");
+    });
+
     it("a mesma correção em todo POST vira um evento só, com a contagem", async () => {
       const resultados = [];
       for (let i = 0; i < 30; i++) {

@@ -1,0 +1,1 @@
+ALTER TABLE "device_state" ADD COLUMN "feeder_meals_24h" smallint;

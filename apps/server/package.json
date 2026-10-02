@@ -9,7 +9,7 @@
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput & node --watch --enable-source-maps dist/main.js",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js",
+    "test": "tsc -p tsconfig.test.json && node --test --test-concurrency=1 dist-test/test/*.test.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsc -p tsconfig.json && node dist/db/migrate-cli.js",
     "db:studio": "drizzle-kit studio"
@@ -21,11 +21,13 @@
     "hono": "^4.10.4",
     "pg": "^8.16.3",
     "pino": "^10.0.0",
+    "web-push": "^3.6.7",
     "zod": "^4.1.12"
   },
   "devDependencies": {
     "@types/node": "^22.18.10",
     "@types/pg": "^8.15.6",
+    "@types/web-push": "^3.6.4",
     "drizzle-kit": "^0.31.6",
     "typescript": "^5.9.3"
   }

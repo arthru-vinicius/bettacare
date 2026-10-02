@@ -21,6 +21,9 @@ export interface Runtime {
   log: Logger;
   isDbReady(): boolean;
   setDbReady(ready: boolean): void;
+  /** Chave pública VAPID, ou `null` se o push ainda não foi inicializado. */
+  vapidPublicKey(): string | null;
+  setVapidPublicKey(key: string | null): void;
 }
 
 export function createRuntime(parts: {
@@ -30,11 +33,16 @@ export function createRuntime(parts: {
   log: Logger;
 }): Runtime {
   let ready = false;
+  let vapid: string | null = null;
   return {
     ...parts,
     isDbReady: () => ready,
     setDbReady: (value: boolean) => {
       ready = value;
+    },
+    vapidPublicKey: () => vapid,
+    setVapidPublicKey: (key: string | null) => {
+      vapid = key;
     },
   };
 }

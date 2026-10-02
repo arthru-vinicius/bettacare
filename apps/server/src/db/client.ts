@@ -98,16 +98,35 @@ export async function enforceSizeLimit(
   }));
 }
 
-/** `SELECT 1` com timeout curto — é tudo que o `/healthz` precisa fazer. */
+/**
+ * `SELECT 1` com timeout curto — é tudo que o `/healthz` precisa fazer.
+ *
+ * Nunca lança. Antes, o `pool.connect()` ficava fora do `try`: com o banco
+ * fora do ar ele rejeitava, e o `/healthz` respondia 500 em vez do 503 que o
+ * contrato do homelab espera. E o `set local` solto não fazia nada — `SET
+ * LOCAL` só vale dentro de transação —, então o `select 1` não tinha prazo.
+ */
 export async function pingDatabase(pool: pg.Pool): Promise<boolean> {
-  const client = await pool.connect();
+  let client: pg.PoolClient;
   try {
-    await client.query("set local statement_timeout = 2000");
-    await client.query("select 1");
-    return true;
+    client = await pool.connect();
   } catch {
     return false;
+  }
+  let ok = false;
+  try {
+    await client.query("begin");
+    await client.query("set local statement_timeout = 2000");
+    await client.query("select 1");
+    await client.query("commit");
+    ok = true;
+    return true;
+  } catch {
+    await client.query("rollback").catch(() => undefined);
+    return false;
   } finally {
-    client.release();
+    // Conexão que falhou volta destruída, não para o pool: devolvê-la faria o
+    // próximo uso tropeçar no mesmo erro.
+    client.release(!ok);
   }
 }

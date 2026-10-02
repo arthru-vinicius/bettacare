@@ -1,8 +1,16 @@
+import { pushSubscriptionSchema } from "@bettacare/contract";
 import { Hono } from "hono";
 
 import { pingDatabase } from "../db/client.js";
 import type { Runtime } from "../runtime.js";
+import {
+  pushConfigured,
+  sendToAll,
+  subscribe,
+  unsubscribe,
+} from "../push/notify.js";
 import { accessIdentity, currentUser } from "./access.js";
+import { eventosCsv, medicoesCsv, nomeDoArquivo, parsePeriodo } from "./export.js";
 import {
   enqueueCommand,
   getOverview,
@@ -45,18 +53,46 @@ export function createApiRouter(rt: Runtime): Hono {
   api.get("/events", async (c) => {
     const q = c.req.query();
     const limit = Math.min(Number(q["limit"] ?? 50) || 50, 200);
+    const from = dataOpcional(q["from"]);
+    const to = dataOpcional(q["to"]);
+    if (from === null || to === null) return c.json({ error: "invalid_range" }, 400);
 
     const page = await listEvents(rt.db, {
-      deviceId: q["device"] ?? DEFAULT_DEVICE,
-      comps: q["comp"]?.split(",").filter(Boolean),
-      sevs: q["sev"]?.split(",").filter(Boolean),
-      source: q["source"] === "device" || q["source"] === "server" ? q["source"] : undefined,
-      search: q["q"] || undefined,
+      ...filtroDeEventos(q),
+      from,
+      to,
       limit,
       cursor: q["cursor"] || undefined,
     });
 
     return c.json(page);
+  });
+
+  // ── Planilhas ───────────────────────────────────────────────────────────
+  //
+  // O navegador baixa direto pelo link — os cookies do Cloudflare Access vão
+  // junto como em qualquer outra chamada da interface.
+  api.get("/export/events.csv", (c) => {
+    const q = c.req.query();
+    const periodo = parsePeriodo(q["from"], q["to"]);
+    if (periodo === null) return c.json({ error: "invalid_range" }, 400);
+
+    const tz = rt.cfg.TZ_DISPLAY;
+    return new Response(eventosCsv(rt.db, { ...filtroDeEventos(q), ...periodo }, tz), {
+      headers: cabecalhosCsv(nomeDoArquivo("registros", periodo, tz)),
+    });
+  });
+
+  api.get("/export/telemetry.csv", (c) => {
+    const q = c.req.query();
+    const periodo = parsePeriodo(q["from"], q["to"]);
+    if (periodo === null) return c.json({ error: "invalid_range" }, 400);
+
+    const tz = rt.cfg.TZ_DISPLAY;
+    const deviceId = q["device"] ?? DEFAULT_DEVICE;
+    return new Response(medicoesCsv(rt.db, { deviceId, ...periodo }, tz), {
+      headers: cabecalhosCsv(nomeDoArquivo("medicoes", periodo, tz)),
+    });
   });
 
   api.get("/commands", async (c) => {
@@ -118,8 +154,62 @@ export function createApiRouter(rt: Runtime): Hono {
       return c.json({ error: "invalid_config", issues: result.issues }, 400);
     }
 
-    rt.log.info({ device, by: email, version: result.version }, "configuração alterada");
+    if (result.changed) {
+      rt.log.info({ device, by: email, version: result.version }, "configuração alterada");
+    }
     return c.json({ config_version: result.version });
+  });
+
+  // ── Notificações push ───────────────────────────────────────────────────
+  //
+  // A chave pública é o que o navegador precisa para se inscrever. Não é
+  // segredo — ela existe justamente para ser distribuída.
+  api.get("/push/key", (c) =>
+    c.json({ key: rt.vapidPublicKey(), enabled: pushConfigured() }),
+  );
+
+  api.post("/push/subscribe", async (c) => {
+    let raw: unknown;
+    try {
+      raw = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid_json" }, 400);
+    }
+
+    const parsed = pushSubscriptionSchema.safeParse(raw);
+    if (!parsed.success) {
+      return c.json({ error: "invalid_subscription", issues: parsed.error.issues }, 400);
+    }
+
+    await subscribe(rt.db, parsed.data, currentUser(c));
+    rt.log.info({ by: currentUser(c) }, "inscrição push registrada");
+    return c.json({ ok: true }, 201);
+  });
+
+  api.delete("/push/subscribe", async (c) => {
+    let raw: unknown;
+    try {
+      raw = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid_json" }, 400);
+    }
+    const endpoint = (raw as { endpoint?: unknown }).endpoint;
+    if (typeof endpoint !== "string") {
+      return c.json({ error: "invalid_subscription" }, 400);
+    }
+
+    await unsubscribe(rt.db, endpoint);
+    return c.json({ ok: true });
+  });
+
+  /** Envia uma notificação de teste — é como o usuário confirma que funcionou. */
+  api.post("/push/test", async (c) => {
+    await sendToAll(rt, {
+      title: "BettaCare",
+      body: "Notificações ativadas. É assim que um alerta vai chegar.",
+      tag: "teste",
+    });
+    return c.json({ ok: true });
   });
 
   api.get("/report", async (c) => {
@@ -138,4 +228,34 @@ export function createApiRouter(rt: Runtime): Hono {
 
   app.route("/api", api);
   return app;
+}
+
+/** Os filtros de evento que vêm da query — iguais na lista e na planilha. */
+function filtroDeEventos(q: Record<string, string>) {
+  return {
+    deviceId: q["device"] ?? DEFAULT_DEVICE,
+    comps: q["comp"]?.split(",").filter(Boolean),
+    sevs: q["sev"]?.split(",").filter(Boolean),
+    source:
+      q["source"] === "device" || q["source"] === "server"
+        ? (q["source"] as "device" | "server")
+        : undefined,
+    search: q["q"] || undefined,
+  };
+}
+
+/** Ausente → `undefined` (sem filtro); presente e inválida → `null` (400). */
+function dataOpcional(raw: string | undefined): Date | undefined | null {
+  if (!raw) return undefined;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function cabecalhosCsv(nome: string): Record<string, string> {
+  return {
+    "content-type": "text/csv; charset=utf-8",
+    "content-disposition": `attachment; filename="${nome}"`,
+    // Planilha é retrato de um instante: nunca do cache.
+    "cache-control": "no-store",
+  };
 }

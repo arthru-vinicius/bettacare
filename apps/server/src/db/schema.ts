@@ -56,6 +56,7 @@ export const commandTargetEnum = pgEnum("command_target", [
   "fan",
   "config",
   "device",
+  "feeder",
 ]);
 export const commandActionEnum = pgEnum("command_action", COMMAND_ACTION_NAMES);
 export const lightSourceEnum = pgEnum("light_source", [
@@ -159,6 +160,73 @@ export const deviceState = pgTable("device_state", {
   lastHistoryAt: timestamp("last_history_at", { withTimezone: true }),
   /** O que o RTC do dispositivo achava que era. Só para diagnóstico de deriva. */
   deviceTime: timestamp("device_time", { withTimezone: true }),
+
+  /**
+   * Diagnóstico do **controlador** — acrescentado na rodada de confiabilidade
+   * de 2026-08-21 (UPGRADE/04, S1). Nenhuma destas perguntas tinha resposta
+   * antes: o ESP32 reiniciou esta noite e por quê; a memória está caindo ao
+   * longo dos dias; o potenciômetro tem mau contato.
+   *
+   * `resetReason` fica só aqui, não em `telemetry`: ele muda uma vez por boot,
+   * e repeti-lo em cada linha de histórico seria a mesma string duas mil vezes
+   * por dia. O evento `system.boot` é o lugar certo para o histórico dele.
+   */
+  resetReason: text("reset_reason"),
+  freeHeap: integer("free_heap"),
+  /** Pior momento desde o boot — a amostragem a cada 3 s quase nunca pega o pico real. */
+  minFreeHeap: integer("min_free_heap"),
+  /** Maior bloco alocável. Junto com `freeHeap`, é o que denuncia fragmentação. */
+  maxAllocHeap: integer("max_alloc_heap"),
+  postLatencyMs: integer("post_latency_ms"),
+  apiFailures: integer("api_failures").notNull().default(0),
+  potRawAdc: integer("pot_raw_adc"),
+  buttonPressed: boolean("button_pressed").notNull().default(false),
+  tachPulsesRaw: integer("tach_pulses_raw"),
+  netTaskStackHwm: integer("net_task_stack_hwm"),
+  bootCount: integer("boot_count"),
+
+  /**
+   * Saúde de `nvs`, `ota` e do buffer de eventos — os três pontos cegos que
+   * sobraram da primeira rodada (`nvs` e `system` emitiam evento sem ter
+   * status; `ota` não emitia nada). Ver UPGRADE/03 e a auditoria de cobertura.
+   */
+  nvsFailures: integer("nvs_failures").notNull().default(0),
+  otaLastResult: text("ota_last_result").notNull().default("none"),
+  eventsDropped: integer("events_dropped").notNull().default(0),
+
+  /**
+   * Último autodiagnóstico sob demanda (`device.diagnose`).
+   *
+   * Fica em `device_state`, não em tabela própria: é um "estado corrente"
+   * — o relatório que vale é o mais recente, e a série histórica de
+   * autodiagnósticos não responde nenhuma pergunta que `events` já não
+   * responda melhor.
+   */
+  diagnosticRanAt: timestamp("diagnostic_ran_at", { withTimezone: true }),
+  diagnosticCommandId: integer("diagnostic_command_id"),
+  diagnosticDurationMs: integer("diagnostic_duration_ms"),
+  diagnosticOverall: healthStatusEnum("diagnostic_overall"),
+  diagnosticChecks: jsonb("diagnostic_checks").$type<Record<string, unknown>[]>(),
+
+  /**
+   * Módulo opcional de alimentação de precisão — ver
+   * `docs/pinagem-alimentador-modulo.md`. A NVS do próprio módulo é a fonte
+   * de verdade da agenda; estas colunas são o último estado que ele
+   * reportou, preservado enquanto `feederConnected` for falso (ele não fica
+   * ligado o tempo todo por desenho — desconectar não apaga a agenda que o
+   * app mostra). Fora de `component_status`/`AQUARIUM_COMPONENTS` de
+   * propósito: ver o comentário em `health/evaluate.ts`.
+   */
+  feederConnected: boolean("feeder_connected").notNull().default(false),
+  feederAutoEnabled: boolean("feeder_auto_enabled"),
+  feederHour1: smallint("feeder_hour1"),
+  feederHour2: smallint("feeder_hour2"),
+  feederGrainsPerFeeding: smallint("feeder_grains_per_feeding"),
+  /** Absoluto, não a idade relativa que viaja no corpo — mais útil pra exibir. */
+  feederLastFeedAt: timestamp("feeder_last_feed_at", { withTimezone: true }),
+  feederLastFeedRequested: smallint("feeder_last_feed_requested"),
+  feederLastFeedConfirmed: smallint("feeder_last_feed_confirmed"),
+  feederLastFeedOk: boolean("feeder_last_feed_ok"),
 });
 
 // ── component_status ──────────────────────────────────────────────────────
@@ -218,6 +286,22 @@ export const telemetry = pgTable(
     fanRpm: integer("fan_rpm").notNull(),
     fanMode: fanModeEnum("fan_mode").notNull(),
     wifiRssi: smallint("wifi_rssi"),
+
+    /**
+     * Histórico do controlador (UPGRADE/04, S9). Antes desta rodada, saúde de
+     * `rtc` e `wifi` só existia como estado corrente — perguntas de tendência
+     * ("desde quando o RTC está sem bateria?") não tinham resposta se o evento
+     * de transição tivesse sido descartado por estouro de buffer no firmware.
+     * `resetReason` fica fora de propósito: ver o comentário em `deviceState`.
+     */
+    tempAgeMs: bigint("temp_age_ms", { mode: "number" }),
+    rtcAvailable: boolean("rtc_available"),
+    rtcLostPower: boolean("rtc_lost_power"),
+    wifiReconnects: integer("wifi_reconnects"),
+    freeHeap: integer("free_heap"),
+    maxAllocHeap: integer("max_alloc_heap"),
+    postLatencyMs: integer("post_latency_ms"),
+    potRawAdc: integer("pot_raw_adc"),
   },
   (t) => [
     primaryKey({
@@ -334,6 +418,59 @@ export const commands = pgTable(
     index("commands_history_idx").on(t.deviceId, t.createdAt),
   ],
 );
+
+// ── push_subscriptions ────────────────────────────────────────────────────
+
+/**
+ * Inscrições de Web Push, uma por navegador/dispositivo que aceitou receber
+ * alertas.
+ *
+ * Existe porque um alerta que só aparece com o app aberto não é alerta: o
+ * valor está justamente em avisar quando **ninguém está olhando**. Web Push
+ * entrega no Android e no Windows com o app fechado, pelo push service do
+ * próprio navegador — sem serviço nosso no meio.
+ *
+ * O `endpoint` é a chave natural: é único por inscrição e é o que o navegador
+ * devolve ao reinscrever. Guardá-lo como PK evita duplicar o mesmo aparelho a
+ * cada vez que a permissão é reconfirmada.
+ */
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  endpoint: text("endpoint").primaryKey(),
+  /** Chave pública da inscrição (`p256dh`) — usada para cifrar o payload. */
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  /** E-mail do Cloudflare Access, para saber de quem é o aparelho. */
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  /**
+   * Quando o push service recusou esta inscrição pela última vez.
+   *
+   * Uma inscrição morre em silêncio — o usuário desinstala o PWA, limpa os
+   * dados, troca de aparelho — e o push service passa a responder `404`/`410`.
+   * Marcar em vez de apagar na hora dá margem para uma falha transitória não
+   * derrubar um aparelho legítimo.
+   */
+  failedAt: timestamp("failed_at", { withTimezone: true }),
+  failureCount: integer("failure_count").notNull().default(0),
+});
+
+// ── server_keys ───────────────────────────────────────────────────────────
+
+/**
+ * Segredos gerados pelo próprio servidor, persistidos para sobreviver a um
+ * restart do container.
+ *
+ * Hoje guarda só o par VAPID do Web Push. Ele **poderia** vir de variável de
+ * ambiente — e vem, se estiver declarada —, mas exigir isso significaria que
+ * as notificações só funcionam depois de alguém gerar um par de chaves à mão
+ * e editar o compose. Gerando na primeira subida, funciona sozinho; e
+ * persistindo, as inscrições existentes continuam válidas depois de um deploy.
+ */
+export const serverKeys = pgTable("server_keys", {
+  name: text("name").primaryKey(),
+  value: text("value").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // ── settings ──────────────────────────────────────────────────────────────
 

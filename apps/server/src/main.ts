@@ -12,6 +12,7 @@ import { createIngestRouter } from "./ingest/router.js";
 import { startMaintenance } from "./jobs/maintenance.js";
 import { startWatchdog } from "./jobs/watchdog.js";
 import { createLogger } from "./logger.js";
+import { ensurePushKeys } from "./push/notify.js";
 import { createRuntime } from "./runtime.js";
 import { mountStatic, resolveWebRoot, webBuildExists } from "./static.js";
 
@@ -66,6 +67,16 @@ async function connectWithBackoff(): Promise<void> {
       await runMigrations(db);
       await ensureCurrentPartitions(db);
       rt.setDbReady(true);
+
+      // Depende do banco: o par VAPID é persistido em `server_keys` para
+      // sobreviver a um deploy sem invalidar as inscrições existentes.
+      try {
+        rt.setVapidPublicKey(await ensurePushKeys(rt));
+      } catch (err) {
+        // Push é um recurso adicional: sem ele o sistema inteiro continua
+        // funcionando, então uma falha aqui não pode impedir a subida.
+        log.error({ err }, "não foi possível inicializar as notificações push");
+      }
 
       stopWatchdog = startWatchdog(rt);
       stopMaintenance = startMaintenance(rt);

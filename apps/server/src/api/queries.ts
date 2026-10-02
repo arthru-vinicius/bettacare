@@ -5,8 +5,10 @@ import {
   targetOf,
   type CommandAction,
   type ComponentHealth,
+  type DeviceConfig,
+  type DiagnosticResult,
 } from "@bettacare/contract";
-import { and, asc, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
 
 import type { Db } from "../db/client.js";
 import {
@@ -99,34 +101,83 @@ export async function getOverview(db: Db, deviceId: string) {
             ip: state.wifiIp,
             reconnects: state.wifiReconnects,
           },
+          // Nulo enquanto o dispositivo nunca falou sobre o alimentador —
+          // firmware anterior a esta integração. A partir daí o bloco sempre
+          // existe, e é `connected` que diz se é agora ou "última vez".
+          feeder:
+            state.feederHour1 === null && state.feederAutoEnabled === null
+              ? null
+              : {
+                  connected: state.feederConnected,
+                  auto_enabled: state.feederAutoEnabled ?? undefined,
+                  hour1: state.feederHour1 ?? undefined,
+                  hour2: state.feederHour2 ?? undefined,
+                  grains_per_feeding: state.feederGrainsPerFeeding ?? undefined,
+                  last_feed_age_s: state.feederLastFeedAt
+                    ? Math.max(
+                        0,
+                        Math.round((Date.now() - state.feederLastFeedAt.getTime()) / 1000),
+                      )
+                    : null,
+                  last_feed_requested: state.feederLastFeedRequested ?? undefined,
+                  last_feed_confirmed: state.feederLastFeedConfirmed ?? undefined,
+                  last_feed_ok: state.feederLastFeedOk ?? undefined,
+                },
           uptime_ms: state.uptimeMs,
           updated_at: state.updatedAt.toISOString(),
+          config_version: state.configVersion,
+          controller: {
+            reset_reason: state.resetReason,
+            free_heap: state.freeHeap,
+            min_free_heap: state.minFreeHeap,
+            max_alloc_heap: state.maxAllocHeap,
+            post_latency_ms: state.postLatencyMs,
+            api_failures: state.apiFailures,
+            nvs_failures: state.nvsFailures,
+            ota_last_result: state.otaLastResult,
+            events_dropped: state.eventsDropped,
+          },
         }
       : null,
     config: parsedConfig?.success ? parsedConfig.data : null,
     config_version: cfgRow?.configVersion ?? 0,
+    diagnostic:
+      state?.diagnosticRanAt != null && state.diagnosticOverall != null
+        ? {
+            ran_at: state.diagnosticRanAt.toISOString(),
+            command_id: state.diagnosticCommandId,
+            duration_ms: state.diagnosticDurationMs ?? 0,
+            overall: state.diagnosticOverall,
+            checks: (state.diagnosticChecks ?? []) as DiagnosticResult["checks"],
+          }
+        : null,
   };
 }
 
-export interface EventFilter {
+/** O que filtra eventos — o mesmo para a lista paginada e para a planilha. */
+export interface EventFilterBase {
   deviceId: string;
   comps?: string[] | undefined;
   sevs?: string[] | undefined;
   source?: "device" | "server" | undefined;
   search?: string | undefined;
+  /** Início do período, inclusivo. */
+  from?: Date | undefined;
+  /** Fim do período, exclusivo. */
+  to?: Date | undefined;
+}
+
+export interface EventFilter extends EventFilterBase {
   limit: number;
   /** `<iso>|<uuid>` do último item da página anterior. */
   cursor?: string | undefined;
 }
 
 /**
- * Página de logs, do mais recente para o mais antigo.
- *
- * Paginação por **cursor**, não por offset: a tabela recebe linhas o tempo
- * todo, e com offset uma inserção entre duas páginas faria o usuário ver o
- * mesmo evento duas vezes ou pular um.
+ * As condições de um filtro de eventos. Compartilhadas com a exportação
+ * (`export.ts`): a planilha tem de conter exatamente o que a lista mostra.
  */
-export async function listEvents(db: Db, f: EventFilter) {
+export function eventFilterWhere(f: EventFilterBase): SQL[] {
   const where: SQL[] = [eq(events.deviceId, f.deviceId)];
 
   if (f.comps?.length) {
@@ -139,8 +190,25 @@ export async function listEvents(db: Db, f: EventFilter) {
     where.push(eq(events.source, f.source));
   }
   if (f.search) {
-    where.push(sql`(${events.msg} ilike ${"%" + f.search + "%"} or ${events.code} ilike ${"%" + f.search + "%"})`);
+    // `%` e `_` digitados são texto, não curinga do ILIKE.
+    const termo = `%${f.search.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+    where.push(sql`(${events.msg} ilike ${termo} or ${events.code} ilike ${termo})`);
   }
+  if (f.from) where.push(gte(events.receivedAt, f.from));
+  if (f.to) where.push(lt(events.receivedAt, f.to));
+  return where;
+}
+
+/**
+ * Página de logs, do mais recente para o mais antigo.
+ *
+ * Paginação por **cursor**, não por offset: a tabela recebe linhas o tempo
+ * todo, e com offset uma inserção entre duas páginas faria o usuário ver o
+ * mesmo evento duas vezes ou pular um.
+ */
+export async function listEvents(db: Db, f: EventFilter) {
+  const where = eventFilterWhere(f);
+
   if (f.cursor) {
     const [ts, id] = f.cursor.split("|");
     if (ts && id) {
@@ -284,7 +352,14 @@ export async function getReport(
   }));
 }
 
-/** Grava a configuração e incrementa a versão que o dispositivo compara. */
+/**
+ * Grava a configuração e incrementa a versão que o dispositivo compara.
+ *
+ * Registra a mudança como evento (UPGRADE/07): antes, mudar o horário da luz
+ * não deixava rastro nenhum, e "por que a luz acendeu às 9h?" não tinha
+ * resposta na aba de registros. Uma gravação que não muda nada não sobe a
+ * versão — senão o dispositivo reaplicaria a mesma configuração à toa.
+ */
 export async function updateSettings(
   db: Db,
   deviceId: string,
@@ -293,26 +368,78 @@ export async function updateSettings(
 ) {
   const parsed = deviceConfigSchema.safeParse(config);
   if (!parsed.success) return { ok: false as const, issues: parsed.error.issues };
+  const nova = parsed.data;
 
-  const [row] = await db
-    .insert(settings)
-    .values({
+  return db.transaction(async (tx) => {
+    const [atual] = await tx
+      .select()
+      .from(settings)
+      .where(eq(settings.deviceId, deviceId))
+      .limit(1);
+
+    const anteriorParse = atual ? deviceConfigSchema.safeParse(atual.config) : null;
+    const anterior = anteriorParse?.success ? anteriorParse.data : null;
+    const mudancas = anterior ? describeConfigChanges(anterior, nova) : ["configuração inicial gravada"];
+
+    if (atual && mudancas.length === 0) {
+      return { ok: true as const, version: atual.configVersion, changed: false };
+    }
+
+    const now = new Date();
+    const [row] = await tx
+      .insert(settings)
+      .values({ deviceId, config: nova, configVersion: 1, updatedAt: now, updatedBy })
+      .onConflictDoUpdate({
+        target: settings.deviceId,
+        set: {
+          config: nova,
+          configVersion: sql`${settings.configVersion} + 1`,
+          updatedAt: now,
+          updatedBy,
+        },
+      })
+      .returning({ version: settings.configVersion });
+
+    await tx.insert(events).values({
+      receivedAt: now,
       deviceId,
-      config: parsed.data,
-      configVersion: 1,
-      updatedAt: new Date(),
-      updatedBy,
-    })
-    .onConflictDoUpdate({
-      target: settings.deviceId,
-      set: {
-        config: parsed.data,
-        configVersion: sql`${settings.configVersion} + 1`,
-        updatedAt: new Date(),
-        updatedBy,
-      },
-    })
-    .returning({ version: settings.configVersion });
+      source: "server",
+      sev: "info",
+      comp: "system",
+      code: "settings.updated",
+      msg: `${mudancas.join("; ")}${updatedBy ? ` — por ${updatedBy}` : ""}`,
+      ctx: { by: updatedBy, before: anterior, after: nova, version: row!.version },
+    });
 
-  return { ok: true as const, version: row!.version };
+    return { ok: true as const, version: row!.version, changed: true };
+  });
+}
+
+/** O que mudou, em frases curtas para a aba de registros. */
+function describeConfigChanges(a: DeviceConfig, b: DeviceConfig): string[] {
+  const graus = (c: number) => `${c.toFixed(1).replace(".", ",")} °C`;
+  const segundos = (ms: number) => `${(ms / 1000).toLocaleString("pt-BR")} s`;
+  const partes: string[] = [];
+
+  if (a.light_on_time !== b.light_on_time || a.light_off_time !== b.light_off_time) {
+    partes.push(
+      `Luminária: acende ${b.light_on_time} e apaga ${b.light_off_time} (era ${a.light_on_time}–${a.light_off_time})`,
+    );
+  }
+  if (a.fan_trigger_c !== b.fan_trigger_c || a.fan_off_c !== b.fan_off_c) {
+    partes.push(
+      `Ventoinha: liga acima de ${graus(b.fan_trigger_c)} e desliga abaixo de ${graus(b.fan_off_c)} (era ${graus(a.fan_trigger_c)}/${graus(a.fan_off_c)})`,
+    );
+  }
+  if (a.telemetry_interval_ms !== b.telemetry_interval_ms) {
+    partes.push(
+      `Atualização a cada ${segundos(b.telemetry_interval_ms)} (era ${segundos(a.telemetry_interval_ms)})`,
+    );
+  }
+  if (a.heartbeat_interval_ms !== b.heartbeat_interval_ms) {
+    partes.push(
+      `Histórico mínimo a cada ${segundos(b.heartbeat_interval_ms)} (era ${segundos(a.heartbeat_interval_ms)})`,
+    );
+  }
+  return partes;
 }

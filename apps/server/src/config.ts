@@ -54,6 +54,17 @@ const envSchema = z.object({
   COMMAND_TTL_S: z.coerce.number().int().min(10).default(90),
 
   /**
+   * Par VAPID do Web Push. **Opcionais de propósito**: sem eles, o servidor
+   * gera um par na primeira subida e o persiste em `server_keys`, para as
+   * notificações funcionarem sem ninguém ter de editar o compose. Declará-los
+   * só faz sentido para quem quer controlar as chaves fora do banco.
+   */
+  VAPID_PUBLIC_KEY: z.string().default(""),
+  VAPID_PRIVATE_KEY: z.string().default(""),
+  /** Contato exigido pela especificação do Web Push; não precisa ser monitorado. */
+  VAPID_CONTACT_EMAIL: z.string().default("bettacare@localhost"),
+
+  /**
    * Defesa em profundidade opcional. O Cloudflare Access já barra quem não
    * deve entrar; vazia, a aplicação confia inteiramente nele.
    */

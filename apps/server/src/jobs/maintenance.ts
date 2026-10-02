@@ -5,7 +5,7 @@ import {
   ensureCurrentPartitions,
   enforceSizeLimit,
 } from "../db/client.js";
-import { events } from "../db/schema.js";
+import { devices, events } from "../db/schema.js";
 import type { Runtime } from "../runtime.js";
 
 /**
@@ -21,22 +21,44 @@ const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 export function startMaintenance(rt: Runtime): () => void {
   let lastRunDay = "";
+  let lastRollupHour = "";
 
   const timer = setInterval(() => {
     const now = new Date();
     const day = now.toISOString().slice(0, 10);
-    if (day === lastRunDay) return;
-    if (now.getUTCHours() < HOUR) return;
-    if (now.getUTCHours() === HOUR && now.getUTCMinutes() < MINUTE) return;
+    const hour = now.toISOString().slice(0, 13);
 
-    lastRunDay = day;
-    void runMaintenance(rt).catch((err) =>
-      rt.log.error({ err }, "falha na manutenção diária"),
-    );
+    if (day !== lastRunDay && maintenanceWindowOpen(now)) {
+      lastRunDay = day;
+      lastRollupHour = hour; // a diária já agrega as horas pendentes
+      void runMaintenance(rt).catch((err) =>
+        rt.log.error({ err }, "falha na manutenção diária"),
+      );
+      return;
+    }
+
+    /**
+     * Rollup a cada hora cheia, não só de madrugada (UPGRADE/07). Com ele só
+     * na manutenção diária, o histórico da interface ficava até um dia
+     * atrasado — "hoje" nunca aparecia, e a tela de relatórios parecia não
+     * fazer nada. Agregar a hora que acabou de fechar custa uma consulta
+     * sobre ~60 linhas.
+     */
+    if (hour !== lastRollupHour) {
+      lastRollupHour = hour;
+      void rollupPendingHours(rt).catch((err) =>
+        rt.log.error({ err }, "falha no rollup horário"),
+      );
+    }
   }, CHECK_INTERVAL_MS);
 
   timer.unref();
   return () => clearInterval(timer);
+}
+
+function maintenanceWindowOpen(now: Date): boolean {
+  if (now.getUTCHours() < HOUR) return false;
+  return !(now.getUTCHours() === HOUR && now.getUTCMinutes() < MINUTE);
 }
 
 export async function runMaintenance(rt: Runtime): Promise<void> {
@@ -45,21 +67,35 @@ export async function runMaintenance(rt: Runtime): Promise<void> {
   const started = Date.now();
   rt.log.info("manutenção diária iniciada");
 
+  /**
+   * Eventos de infraestrutura (purga, teto de tamanho) não pertencem a nenhum
+   * dispositivo específico, mas precisam de um `device_id` para aparecer na
+   * aba Logs — a interface hoje só consulta o dispositivo padrão. Gravar para
+   * **todos os dispositivos cadastrados** é a opção honesta: sem isto, um
+   * `"aquarium-01"` fixo perderia o evento em silêncio se o slug real fosse
+   * outro (UPGRADE/04, S6).
+   */
+  const deviceIds = (await rt.db.select({ deviceId: devices.deviceId }).from(devices)).map(
+    (d) => d.deviceId,
+  );
+
   await ensureCurrentPartitions(rt.db);
-  const rolled = await rollupPreviousDay(rt);
+  const rolled = await rollupPendingHours(rt);
   const dropped = await enforceSizeLimit(rt.db, rt.cfg.DB_SIZE_LIMIT_BYTES);
 
   for (const p of dropped) {
-    await rt.db.insert(events).values({
-      receivedAt: new Date(),
-      deviceId: "aquarium-01",
-      source: "server",
-      sev: "info",
-      comp: "system",
-      code: "db.partition_dropped",
-      msg: `Partição ${p.partition} descartada para respeitar o teto de tamanho`,
-      ctx: { partition: p.partition, freed_bytes: p.freedBytes },
-    });
+    for (const deviceId of deviceIds) {
+      await rt.db.insert(events).values({
+        receivedAt: new Date(),
+        deviceId,
+        source: "server",
+        sev: "info",
+        comp: "system",
+        code: "db.partition_dropped",
+        msg: `Partição ${p.partition} descartada para respeitar o teto de tamanho`,
+        ctx: { partition: p.partition, freed_bytes: p.freedBytes },
+      });
+    }
   }
 
   const size = await databaseSizeBytes(rt.db);
@@ -71,16 +107,18 @@ export async function runMaintenance(rt: Runtime): Promise<void> {
       { size, limit: rt.cfg.DB_SIZE_LIMIT_BYTES },
       "teto de tamanho inatingível",
     );
-    await rt.db.insert(events).values({
-      receivedAt: new Date(),
-      deviceId: "aquarium-01",
-      source: "server",
-      sev: "warn",
-      comp: "system",
-      code: "db.size_limit_unreachable",
-      msg: "O banco excede o teto e só resta a partição do mês corrente",
-      ctx: { size_bytes: size, limit_bytes: rt.cfg.DB_SIZE_LIMIT_BYTES },
-    });
+    for (const deviceId of deviceIds) {
+      await rt.db.insert(events).values({
+        receivedAt: new Date(),
+        deviceId,
+        source: "server",
+        sev: "warn",
+        comp: "system",
+        code: "db.size_limit_unreachable",
+        msg: "O banco excede o teto e só resta a partição do mês corrente",
+        ctx: { size_bytes: size, limit_bytes: rt.cfg.DB_SIZE_LIMIT_BYTES },
+      });
+    }
   }
 
   rt.log.info(
@@ -95,7 +133,17 @@ export async function runMaintenance(rt: Runtime): Promise<void> {
 }
 
 /**
- * Agrega em `telemetry_hourly` as horas do dia anterior.
+ * Agrega em `telemetry_hourly` toda hora completa ainda não coberta, por
+ * dispositivo — não só "ontem" (UPGRADE/04, S5).
+ *
+ * A janela fixa original perdia dias inteiros para sempre se o servidor
+ * ficasse fora do ar quando a manutenção deveria ter rodado: como
+ * `telemetry` é purgada por partição e `telemetry_hourly` é isento, os dias
+ * saltados nunca eram agregados, e a telemetria bruta deles acabava purgada
+ * antes de alguém perceber. Aqui a cobertura de cada dispositivo é
+ * `max(hour)` já agregado até a hora corrente (exclusive — a hora em curso
+ * ainda está recebendo amostras). Um piso de 90 dias limita o primeiro run
+ * depois de uma lacuna longa, sem impedir a recuperação.
  *
  * As métricas de tempo são **ponderadas pela duração**, não pela contagem de
  * amostras. Com gravação on-change, uma hora pode ter três linhas ou trinta, e
@@ -103,9 +151,26 @@ export async function runMaintenance(rt: Runtime): Promise<void> {
  * significado. Cada amostra vale o intervalo até a seguinte, limitado ao fim
  * da hora para não vazar duração de uma hora para a outra.
  */
-async function rollupPreviousDay(rt: Runtime): Promise<number> {
+export async function rollupPendingHours(rt: Runtime): Promise<number> {
+  if (!rt.isDbReady()) return 0;
   const result = await rt.db.execute<{ count: string }>(sql`
-    with amostras as (
+    with cobertura as (
+      select device_id, max(hour) as last_hour
+        from telemetry_hourly
+       group by device_id
+    ),
+    janela as (
+      select
+        d.device_id,
+        greatest(
+          coalesce(c.last_hour + interval '1 hour', date_trunc('hour', now() - interval '90 days')),
+          date_trunc('hour', now() - interval '90 days')
+        ) as from_hour,
+        date_trunc('hour', now()) as to_hour
+      from devices d
+      left join cobertura c on c.device_id = d.device_id
+    ),
+    amostras as (
       select
         t.device_id,
         date_trunc('hour', t.received_at) as hour,
@@ -125,8 +190,10 @@ async function rollupPreviousDay(rt: Runtime): Promise<number> {
           ) - t.received_at
         )) as segundos
       from telemetry t
-      where t.received_at >= date_trunc('day', now() - interval '1 day')
-        and t.received_at <  date_trunc('day', now())
+      join janela j
+        on j.device_id = t.device_id
+       and t.received_at >= j.from_hour
+       and t.received_at <  j.to_hour
     ),
     agregado as (
       select

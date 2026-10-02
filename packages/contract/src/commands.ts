@@ -52,6 +52,13 @@ export const commandActionSchema = z.discriminatedUnion("action", [
     action: z.literal("feeder.feed_now"),
     /** Grãos a dispensar; omitido usa o valor configurado no módulo. */
     grains: z.int().min(1).max(20).optional(),
+    /**
+     * Alimenta mesmo com o limite de refeições em 24 h atingido
+     * (`FEEDER_MEALS_PER_24H`). Só existe aqui, no app: o botão do módulo
+     * nunca passa do limite. Sem isto, o módulo recusa e o servidor
+     * registra `feeder.limit_reached`.
+     */
+    force: z.boolean().optional(),
   }),
   z.object({
     /**

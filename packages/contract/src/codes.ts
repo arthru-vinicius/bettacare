@@ -470,6 +470,36 @@ export const EVENT_CODES = {
     label: "Módulo do alimentador não respondeu",
     hint: "Confira se o módulo está ligado e o conector de 4 vias está encaixado.",
   },
+  "feeder.limit_reached": {
+    comp: "feeder",
+    sev: "warn",
+    label: "Limite de refeições em 24 h atingido",
+    hint: "O pedido foi recusado: o peixe já comeu 3 vezes nas últimas 24 h, contando a agenda. Pelo app dá para alimentar mesmo assim, ignorando o limite; pelo botão do módulo, não.",
+  },
+  "feeder.limit_overridden": {
+    comp: "feeder",
+    sev: "warn",
+    label: "Limite de refeições ignorado pelo app",
+    hint: "Uma alimentação além do limite de 24 h, pedida de propósito pelo app.",
+  },
+  "feeder.feed_denied": {
+    comp: "feeder",
+    sev: "warn",
+    label: "Pedido de alimentação recusado pelo módulo",
+    hint: "Já havia outra refeição em andamento. Tente de novo em alguns segundos.",
+  },
+  "feeder.sensor_fault": {
+    comp: "feeder",
+    sev: "warn",
+    label: "Sensor de grãos falhou no autoteste",
+    hint: "A refeição saiu contada pelo servo, sem confirmação dos grãos. Confira o LED infravermelho, o alinhamento e se não há grão preso no tubo.",
+  },
+  "feeder.hopper_empty": {
+    comp: "feeder",
+    sev: "error",
+    label: "Nenhum grão caiu — reservatório vazio ou doseador travado",
+    hint: "Em tentativas seguidas o sensor não viu grão nenhum, e a refeição foi interrompida. Confira a ração e o slide do doseador.",
+  },
 
   // ── comandos (gerados pelo servidor) ───────────────────────────────────
   "cmd.queued": { comp: "api", sev: "info", label: "Comando enfileirado" },

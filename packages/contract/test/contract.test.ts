@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   DEFAULT_CONFIG,
+  FEEDER_MEALS_PER_24H,
   describeEventCode,
   deviceConfigSchema,
   pendingCommandSchema,
@@ -215,6 +216,17 @@ describe("alimentador no corpo da telemetria", () => {
 
   it("sem o bloco continua aceito — firmware anterior ao alimentador", () => {
     assert.equal(telemetryRequestSchema.parse(post).feeder, undefined);
+  });
+
+  it("conectado, leva as refeições das últimas 24 h", () => {
+    const r = telemetryRequestSchema.parse({ ...post, feeder: { connected: true, meals_24h: 3 } });
+    assert.equal(r.feeder?.meals_24h, 3);
+  });
+
+  it("alimentar agora aceita ignorar o limite — só o app manda isso", () => {
+    const c = pendingCommandSchema.parse({ id: 7, action: "feeder.feed_now", force: true });
+    assert.equal(c.action === "feeder.feed_now" && c.force, true);
+    assert.equal(FEEDER_MEALS_PER_24H, 3);
   });
 });
 

@@ -134,8 +134,21 @@ export const feederStateSchema = z.object({
   last_feed_requested: z.int().min(0).max(20).optional(),
   last_feed_confirmed: z.int().min(0).max(20).optional(),
   last_feed_ok: z.boolean().optional(),
+  /**
+   * Refeições nas últimas 24 h, contadas pelo módulo — agenda, botão e app
+   * juntos. É o que o app compara com `FEEDER_MEALS_PER_24H` antes de
+   * oferecer "alimentar mesmo assim".
+   */
+  meals_24h: z.int().min(0).max(255).optional(),
 });
 export type FeederState = z.infer<typeof feederStateSchema>;
+
+/**
+ * Refeições permitidas em 24 h, somando agenda, botão e app. Além disso, o
+ * módulo recusa (`feeder.limit_reached`); só o app pode passar por cima,
+ * com `force` no `feeder.feed_now`. O botão do módulo nunca passa.
+ */
+export const FEEDER_MEALS_PER_24H = 3;
 
 /**
  * Diagnóstico do **controlador**, não do aquário — a distinção que faltava

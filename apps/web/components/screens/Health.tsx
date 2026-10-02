@@ -459,8 +459,13 @@ function valorDe(h: ComponentHealth): string {
       return typeof pressionado === "boolean" ? (pressionado ? "pressionado" : "solto") : "—";
     }
     case "pot": {
+      // Os extremos são posições, não defeito: o topo satura o ADC (UPGRADE/02,
+      // §8) e o mínimo é o "desligar" do firmware (`POT_MIN_ADC`, 110).
       const adc = d["adc"];
-      return typeof adc === "number" ? `${adc} / 4095` : "—";
+      if (typeof adc !== "number") return "—";
+      if (adc >= 4090) return `${adc} / 4095 · fim do curso`;
+      if (adc <= 110) return `${adc} / 4095 · no mínimo`;
+      return `${adc} / 4095`;
     }
     default:
       return "";

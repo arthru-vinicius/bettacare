@@ -37,6 +37,22 @@ export const lightStateSchema = z.object({
 });
 export type LightState = z.infer<typeof lightStateSchema>;
 
+/**
+ * Faixas da água **nesta instalação** — aquário em Recife, com ar-condicionado.
+ *
+ * Fora de `TEMP_PLAUSIBLE_C` a leitura é defeito, nunca temperatura: em
+ * produção apareceram dois -48,00 °C isolados entre leituras de 27,13 °C, um
+ * quadro de 1-Wire que passou no CRC por acaso. Não entra em lugar nenhum —
+ * nem no banco, nem na saúde, nem no gráfico. O firmware (2.0.2) descarta na
+ * origem; o servidor confere de novo.
+ *
+ * Fora de `TEMP_USUAL_C` a leitura é real, mas rara: sai do gráfico (que
+ * mostra o comportamento normal da água) e vira um aviso nos Registros, com
+ * quanto tempo ficou lá e o pico (`temp.out_of_usual_range`).
+ */
+export const TEMP_PLAUSIBLE_C = { min: 10, max: 45 } as const;
+export const TEMP_USUAL_C = { min: 16, max: 33 } as const;
+
 export const temperatureStateSchema = z.object({
   /** Nulo quando o sensor não respondeu. Não usar 0 nem -127 como sentinela. */
   celsius: z.number().min(-55).max(125).nullable(),

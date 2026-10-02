@@ -301,6 +301,24 @@ export const EVENT_CODES = {
     label: "Sensor reiniciou durante a leitura",
     hint: "Devolveu 85,0 °C, o valor de power-on do DS18B20 — leitura descartada. Repetindo, confira a alimentação da sonda (VCC, GND e o 100 nF).",
   },
+  "temp.implausible": {
+    comp: "temp",
+    sev: "warn",
+    label: "Leitura impossível descartada",
+    hint: "Fora de 10–45 °C, a água deste aquário não chega: é leitura corrompida no fio do sensor, não temperatura. Não entra no gráfico nem na saúde. Frequente, confira o cabo, o pull-up de 4,7 kΩ e a distância do PWM da ventoinha.",
+  },
+  "temp.spike_discarded": {
+    comp: "temp",
+    sev: "warn",
+    label: "Salto de temperatura não confirmado",
+    hint: "Uma leitura pulou mais de 2 °C e a releitura, um segundo depois, voltou ao valor anterior — era ruído no fio, não a água.",
+  },
+  "temp.out_of_usual_range": {
+    comp: "temp",
+    sev: "warn",
+    label: "Água fora da faixa habitual",
+    hint: "Abaixo de 16 °C ou acima de 33 °C. A leitura é real, mas fica fora do gráfico; aqui está quanto tempo durou e o pico.",
+  },
 
   // ── ventoinha ──────────────────────────────────────────────────────────
   "fan.on": { comp: "fan", sev: "info", label: "Ventoinha ligou" },

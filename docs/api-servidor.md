@@ -67,8 +67,10 @@ Access.
 | `GET /api/commands` | histórico de comandos com a trilha inteira |
 | `POST /api/commands` | enfileira um comando (`202`) |
 | `GET /api/settings` | configuração e `config_version` |
-| `PUT /api/settings` | grava e incrementa a versão |
+| `PUT /api/settings` | grava, incrementa a versão e registra `settings.updated` |
 | `GET /api/report` | série do rollup horário |
+| `GET /api/export/events.csv` | planilha dos registros, com os filtros de `/api/events` |
+| `GET /api/export/telemetry.csv` | planilha das medições de um período |
 
 ### `GET /api/events`
 
@@ -77,7 +79,9 @@ Access.
 | `sev` | `error,fatal` | lista separada por vírgula |
 | `comp` | `temp,fan` | idem |
 | `source` | `device` ou `server` | |
-| `q` | `sensor` | busca em `msg` e `code` |
+| `q` | `sensor` | busca em `msg` e `code`; `%` e `_` contam como texto |
+| `from` | `2026-10-02T03:00:00Z` | início do período, inclusivo |
+| `to` | `2026-10-03T03:00:00Z` | fim do período, exclusivo |
 | `limit` | `50` | teto de 200 |
 | `cursor` | `<iso>\|<uuid>` | vem do `next_cursor` da página anterior |
 
@@ -104,6 +108,32 @@ Comandos do mesmo alvo se anulam — enfileirar um novo marca os anteriores como
 `superseded`. Sem isso, um dispositivo voltando de meia hora offline executaria
 em sequência uma fila de decisões já obsoletas.
 
+### `PUT /api/settings`
+
+Corpo é a configuração **inteira** (`deviceConfigSchema`): as regras cruzam
+campos — desliga abaixo de liga, acende diferente de apaga —, então o servidor
+valida o conjunto. A interface manda o que já existe com só a parte editada
+trocada.
+
+- Gravação idêntica à atual não sobe a versão: o aquário não reaplica à toa.
+- Toda mudança vira o evento `settings.updated`, com o que mudou em frase
+  ("Luminária: acende 09:30 e apaga 18:15 (era 10:00–17:00)") e quem mudou.
+- O `GET /api/overview` traz `state.config_version`, a versão que o **aquário**
+  diz estar usando. Quando ela alcança a da raiz, a mudança foi aplicada — é o
+  que permite à interface dizer "aplicado", e não só "salvo".
+
+### `GET /api/export/*.csv`
+
+Download direto pelo navegador (os cookies do Access vão junto). `from`/`to`
+como em `/api/events`; sem eles, os últimos 7 dias. Período máximo de 400 dias,
+teto de 200 mil linhas.
+
+Formato do Excel em português: separador `;`, vírgula decimal, BOM de UTF-8 e
+datas no fuso de `TZ_DISPLAY`, mais uma coluna em UTC. Texto vindo do firmware
+que começa com `=`, `+`, `-` ou `@` sai com apóstrofo, para não virar fórmula.
+Gerado em lotes de mil linhas e enviado em fluxo — o container tem teto de
+256 MB.
+
 ---
 
 ## Cabeçalhos de cache
@@ -127,11 +157,35 @@ sistema.
 | Job | Frequência | O que faz |
 |---|---|---|
 | Watchdog | 30 s | marca dispositivo offline, expira comandos sem `ack` |
-| Manutenção | 1×/dia, 03:15 UTC | partições, rollup horário, purga por tamanho |
+| Rollup | a cada hora cheia | agrega a hora que acabou de fechar em `telemetry_hourly` |
+| Manutenção | 1×/dia, 03:15 UTC | partições, rollup pendente, purga por tamanho |
 
 Quando o dispositivo é dado como offline, **todos os componentes viram
 `unknown`** — manter `ok` com dado velho seria afirmar algo que não se sabe
 mais.
+
+### Saúde medida por tempo
+
+Anomalia vira `fault` quando **persiste por tempo**, não por número de POSTs:
+5 s para ventoinha com PWM e tacômetro em zero e para luminária divergente,
+30 s para botão preso. O início fica no `detail` do componente
+(`anomaly_since`). Com POSTs contados, o intervalo de 1 s transformaria toda
+partida da ventoinha — o tacômetro conta em janelas de 2 s — em falha com push.
+
+A divergência da luminária só conta com a última mudança vinda do comando
+(`source: "command"`): o botão físico e a automação mudam a luz de propósito,
+e antes isso virava "luminária não respondeu".
+
+`component_status` só é regravado quando muda status, código ou início de
+anomalia — ou a cada 5 s, para o valor exibido não envelhecer.
+
+### Corpo com problema
+
+Valor fora de faixa é grampeado, formato inválido em `rtc.time`, `wifi.ip` e
+`device_time` vira `null`, e um **item** inválido de `events` ou
+`diagnostic.checks` é descartado sozinho (`ingest.event_dropped`) — antes, um
+evento de componente que o servidor não conhecia derrubava o POST inteiro. O
+log da recusa leva o valor recebido em cada campo.
 
 ---
 
@@ -142,9 +196,14 @@ O que foi exercitado contra Postgres 17 real, simulando o ESP32 com `curl`:
 - reenvio do mesmo `seq` não duplica linha nem corrompe estado
 - comando entregue na resposta do POST e confirmado no POST seguinte
 - recusa do dispositivo (`ack.ok = false`) vira `rejected` com o código do erro
-- ventoinha com PWM e tacômetro em zero vira `fault` no segundo ciclo, e volta
-  a `ok` quando gira
-- luminária que não obedece vira `fault` no segundo ciclo divergente
+- ventoinha com PWM e tacômetro em zero vira `fault` depois de 5 s, e volta
+  a `ok` quando gira; recém-ligada, com o tacômetro ainda em zero, não vira
+- luminária trocada pelo botão físico depois de um comando não vira falha
+- configuração gravada, registrada com quem mudou, aplicada pelo aquário e
+  refletida em `state.config_version`; gravação idêntica não sobe a versão
+- planilhas de registros e de medições com BOM, `;`, vírgula decimal e fuso de
+  exibição
+- evento de componente desconhecido descartado sozinho, o resto do POST aceito
 - sensor de temperatura ausente vira `missing`, veredito geral `critical`
 - silêncio do dispositivo vira `offline`, componentes viram `unknown` e o
   comando pendente expira com `cmd.expired`

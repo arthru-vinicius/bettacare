@@ -309,7 +309,7 @@ static void _handle_line(char* line) {
                 "Ja foram %u refeicoes em 24 h: alimentacao %s recusada", (unsigned)vr, de);
     } else if (strcmp(motivo, "OCUPADO") == 0) {
       event_log(SEV_WARN, COMP_FEEDER, "feeder.feed_denied",
-                "Alimentacao %s recusada: outra refeicao em andamento", de);
+                "Alimentacao %s recusada: modulo ocupado (refeicao, teste, calibracao ou OTA)", de);
     } else if (strcmp(motivo, "PERDIDA") == 0) {
       event_log(SEV_WARN, COMP_FEEDER, "feeder.meal_missed",
                 "Refeicao %s perdida: o modulo estava desligado ou sem hora no horario marcado", de);

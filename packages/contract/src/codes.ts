@@ -486,13 +486,13 @@ export const EVENT_CODES = {
     comp: "feeder",
     sev: "warn",
     label: "Pedido de alimentação recusado pelo módulo",
-    hint: "Já havia outra refeição em andamento. Tente de novo em alguns segundos.",
+    hint: "O módulo estava ocupado — outra refeição, um teste, a calibração ou uma atualização — ou o doseador ainda não foi calibrado. A mensagem do evento diz qual. Ocupado, tente de novo em alguns segundos.",
   },
   "feeder.meal_missed": {
     comp: "feeder",
     sev: "warn",
     label: "Refeição da agenda perdida",
-    hint: "O módulo estava desligado, ou sem hora, no horário marcado. Ele recupera uma refeição atrasada até 4 h, desde que a próxima esteja a mais de 4 h; fora disso, pula.",
+    hint: "O módulo estava desligado, ou sem hora, no horário marcado. Ele recupera uma refeição atrasada até 4 h, desde que nenhuma outra refeição — a próxima da agenda ou a última que saiu — fique a menos de 4 h dela; fora disso, pula.",
   },
   "feeder.sensor_fault": {
     comp: "feeder",

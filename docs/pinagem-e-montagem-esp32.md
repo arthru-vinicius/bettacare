@@ -554,11 +554,12 @@ montagem**:
 |---|---|---|---|---|
 | 1 | preto | `GND` | `GND` comum | `GND` |
 | 2 | verde | `12V` | `+12V` bruto da fonte, **antes** do buck do ESP32 | entrada do regulador local de 5 V |
-| 3 | vermelho | `TX` → | `GPIO4` (`TXD2`) | `GPIO5` (RX) |
-| 4 | azul | ← `RX` | `GPIO16` (`RXD2`) | `GPIO4` (TX) |
+| 3 | vermelho | `TX` → | `GPIO4` (`TXD2`) | `GPIO20` (RX da UART0), por 4,7 kΩ |
+| 4 | azul | ← `RX` | `GPIO16` (`RXD2`) | `GPIO21` (TX da UART0), por 1 kΩ |
 
-Os `GPIO4`/`GPIO5` da última coluna são do ESP32-C3 — chip diferente do
-`GPIO4` do módulo principal, numeração independente.
+A última coluna é do ESP32-C3 — chip diferente, numeração independente. Os
+resistores ficam do lado do módulo; o porquê, e o resto da montagem dele, em
+[`pinagem-alimentador-modulo.md`](./pinagem-alimentador-modulo.md), §7.
 
 > **Sobre as cores:** não é a combinação "óbvia" (o costume seria vermelho no
 > 12V), mas é a que veio no conector comprado. Os dois lados do cabo precisam

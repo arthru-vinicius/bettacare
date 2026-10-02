@@ -116,10 +116,42 @@ int main() {
 
   printf("F11 comandos de saida\n");
   Serial2.out.clear();
-  feeder_link_request_feed(0);
-  feeder_link_request_feed(4);
+  feeder_link_request_feed(0, false);
+  feeder_link_request_feed(4, false);
   feeder_link_request_config(9, 21, 6, true);
   CHECK(Serial2.out == "FEED\nFEED 4\nCFG 9 21 6 1\n", "formato FEED/CFG");
+  Serial2.out.clear();
+  feeder_link_request_feed(0, true);
+  feeder_link_request_feed(4, true);
+  CHECK(Serial2.out == "FEED FORCE\nFEED 4 FORCE\n", "FORCE so quando o app ignora o limite");
+
+  printf("F11b refeicoes em 24 h no PONG; modulo antigo sem o campo segue entendido\n");
+  CHECK(feeder_link_get_state().meals_24h == FEEDER_MEALS_UNKNOWN, "desconhecido antes");
+  feed("PONG 8 20 5 1 60 5 5 1 2\n");
+  CHECK(feeder_link_get_state().meals_24h == 2, "2 refeicoes");
+  feed("PONG 8 20 5 1 60 5 5 1\n");
+  CHECK(feeder_link_get_state().meals_24h == 2 && feeder_link_get_state().connected,
+        "sem o 9o campo: mantem o ultimo e segue conectado");
+
+  printf("F11c DENIED: limite e ocupado viram eventos proprios\n");
+  g_events.clear();
+  feed("DENIED LIMITE 3 BOTAO\n");
+  CHECK(has("feeder.limit_reached") && feeder_link_get_state().meals_24h == 3, "limite, 3 refeicoes");
+  feed("DENIED OCUPADO 1 APP\n");
+  CHECK(has("feeder.feed_denied"), "ocupado");
+  g_events.clear();
+  feed("DENIED LIMITE x BOTAO\n");
+  CHECK(g_events.empty(), "contagem corrompida: linha descartada");
+
+  printf("F11d FED com motivo: reservatorio vazio e sensor com defeito\n");
+  g_events.clear();
+  feed("FED 5 0 0 VAZIO AGENDA\n");
+  CHECK(has("feeder.hopper_empty"), "vazio");
+  feed("FED 5 0 0 SENSOR BOTAO\n");
+  CHECK(has("feeder.sensor_fault"), "sensor");
+  g_events.clear();
+  feed("FED 5 5 1 OKMUITOCOMPRIDO AGENDA\n");
+  CHECK(has("feeder.fed_ok"), "motivo comprido demais: fica vazio, sem lixo");
 
   // Um ciclo do loop: o feeder_link é chamado a cada ~200 ms.
   auto ciclos = [](int n) {

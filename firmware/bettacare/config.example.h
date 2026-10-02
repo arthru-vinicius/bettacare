@@ -21,7 +21,7 @@
 // --- Identidade do dispositivo -----------------------------------------------
 // Precisa casar com o slug usado no servidor: minúsculas, dígitos e hífen.
 #define DEVICE_ID      "aquarium-01"
-#define FW_VERSION     "2.0.3"
+#define FW_VERSION     "2.1.0"
 
 // --- Wi-Fi -------------------------------------------------------------------
 #define WIFI_SSID      "YOUR_NETWORK_HERE"

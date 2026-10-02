@@ -62,6 +62,7 @@ void feeder_link_init() {
   gpio_pulldown_en((gpio_num_t)PIN_FEEDER_RX);
   _state = {};
   _state.last_feed_age_s = UINT32_MAX;
+  _state.meals_24h = FEEDER_MEALS_UNKNOWN;
   _ever_connected = false;
   _last_rx_ms = 0;
   _last_ping_ms = 0;
@@ -97,6 +98,24 @@ static bool _next_token(char*& p, char* out, uint8_t out_len) {
   }
   out[i] = '\0';
   return true;
+}
+
+/**
+ * Um token opcional do fim da linha — campos que o módulo 1.0 acrescentou.
+ * Ausente ou comprido demais, fica vazio: nunca um texto cortado sem `\0`.
+ */
+static void _optional_token(char*& p, char* out, uint8_t out_len) {
+  if (!_next_token(p, out, out_len)) out[0] = '\0';
+}
+
+/** A origem de uma alimentação, como frase: "da agenda", "do botao"... */
+static const char* _origem(const char* o) {
+  if (strcmp(o, "AGENDA") == 0)  return "da agenda";
+  if (strcmp(o, "RECUP") == 0)   return "de recuperacao";
+  if (strcmp(o, "BOTAO") == 0)   return "do botao";
+  if (strcmp(o, "APP") == 0)     return "do app";
+  if (strcmp(o, "FORCADO") == 0) return "do app (limite ignorado)";
+  return "do modulo";
 }
 
 static void _mark_connected() {
@@ -196,7 +215,7 @@ static void _handle_line(char* line) {
   // conector vazio marcava o módulo como conectado e, 6 s depois, gerava um
   // "desconectou" que nunca aconteceu (UPGRADE/07).
   bool reconhecida = strcmp(tok, "PONG") == 0 || strcmp(tok, "SCHEDULE") == 0 ||
-                     strcmp(tok, "FED") == 0;
+                     strcmp(tok, "FED") == 0 || strcmp(tok, "DENIED") == 0;
   if (!reconhecida) return;
   _mark_connected();
 
@@ -219,6 +238,11 @@ static void _handle_line(char* line) {
     _state.last_feed_requested = req;
     _state.last_feed_confirmed = conf;
     _state.last_feed_ok = ok;
+
+    char refeicoes[6];
+    uint32_t vr;
+    _optional_token(p, refeicoes, sizeof(refeicoes));
+    if (refeicoes[0] != '\0' && _parse_uint(refeicoes, 254, vr)) _state.meals_24h = (uint8_t)vr;
     return;
   }
 
@@ -246,15 +270,47 @@ static void _handle_line(char* line) {
     _state.last_feed_age_s = 0;
     _last_feed_measured_ms = millis();
 
-    if (_state.last_feed_confirmed < _state.last_feed_requested) {
+    char motivo[10], origem[10];
+    _optional_token(p, motivo, sizeof(motivo));
+    _optional_token(p, origem, sizeof(origem));
+    const char* de = _origem(origem);
+
+    if (strcmp(motivo, "VAZIO") == 0) {
+      event_log(SEV_ERROR, COMP_FEEDER, "feeder.hopper_empty",
+                "Nenhum grao caiu: alimentacao %s interrompida com %u de %u graos",
+                de, (unsigned)conf, (unsigned)req);
+    } else if (strcmp(motivo, "SENSOR") == 0) {
+      event_log(SEV_WARN, COMP_FEEDER, "feeder.sensor_fault",
+                "Sensor de graos falhou no autoteste: alimentacao %s com %u graos contados pelo servo",
+                de, (unsigned)req);
+    } else if (conf < req) {
       event_log(SEV_WARN, COMP_FEEDER, "feeder.fed_incomplete",
-                "Alimentacao incompleta: %u de %u graos confirmados",
-                (unsigned)_state.last_feed_confirmed,
-                (unsigned)_state.last_feed_requested);
+                "Alimentacao %s incompleta: %u de %u graos confirmados",
+                de, (unsigned)conf, (unsigned)req);
     } else {
       event_log(SEV_INFO, COMP_FEEDER, "feeder.fed_ok",
-                "Alimentacao concluida: %u graos confirmados",
-                (unsigned)_state.last_feed_confirmed);
+                "Alimentacao %s concluida: %u graos confirmados", de, (unsigned)conf);
+    }
+    return;
+  }
+
+  if (strcmp(tok, "DENIED") == 0) {
+    char motivo[10], refeicoes[6], origem[10];
+    uint32_t vr;
+    if (!_next_token(p, motivo, sizeof(motivo)) || !_next_token(p, refeicoes, sizeof(refeicoes)) ||
+        !_parse_uint(refeicoes, 254, vr)) {
+      return;
+    }
+    _optional_token(p, origem, sizeof(origem));
+    _state.meals_24h = (uint8_t)vr;
+    const char* de = _origem(origem);
+
+    if (strcmp(motivo, "LIMITE") == 0) {
+      event_log(SEV_WARN, COMP_FEEDER, "feeder.limit_reached",
+                "Ja foram %u refeicoes em 24 h: alimentacao %s recusada", (unsigned)vr, de);
+    } else if (strcmp(motivo, "OCUPADO") == 0) {
+      event_log(SEV_WARN, COMP_FEEDER, "feeder.feed_denied",
+                "Alimentacao %s recusada: outra refeicao em andamento", de);
     }
     return;
   }
@@ -318,11 +374,11 @@ FeederLinkState feeder_link_get_state() {
   return s;
 }
 
-void feeder_link_request_feed(uint8_t grains) {
+void feeder_link_request_feed(uint8_t grains, bool force) {
   if (grains == 0) {
-    Serial2.print("FEED\n");
+    Serial2.print(force ? "FEED FORCE\n" : "FEED\n");
   } else {
-    Serial2.printf("FEED %u\n", (unsigned)grains);
+    Serial2.printf(force ? "FEED %u FORCE\n" : "FEED %u\n", (unsigned)grains);
   }
 }
 

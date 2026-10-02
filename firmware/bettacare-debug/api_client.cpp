@@ -15,6 +15,7 @@
 #include "device_config.h"
 #include "diagnostics.h"
 #include "event_log.h"
+#include "feeder_link.h"
 #include "web_server.h"
 
 #define BOOT_NS      "bc_boot"
@@ -195,6 +196,9 @@ static void _build_body(JsonDocument& doc, const DeviceSnapshot& s,
       feeder["last_feed_confirmed"] = s.feeder_last_feed_confirmed;
       feeder["last_feed_ok"]        = s.feeder_last_feed_ok;
     }
+    if (s.feeder_meals_24h != FEEDER_MEALS_UNKNOWN) {
+      feeder["meals_24h"] = s.feeder_meals_24h;
+    }
   }
 
   if (n_acks > 0) {
@@ -373,6 +377,7 @@ static void _handle_response(JsonDocument& doc) {
     cmd.feeder_hour1        = (uint8_t)(c["hour1"] | 0);
     cmd.feeder_hour2        = (uint8_t)(c["hour2"] | 0);
     cmd.feeder_auto_enabled = c["auto_enabled"] | true;
+    cmd.feeder_force        = c["force"] | false;
 
     if (!app_state_push_command(cmd)) {
       app_state_push_ack(cmd.id, false, "cmd.queue_full");

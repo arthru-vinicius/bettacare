@@ -29,17 +29,31 @@
  *
  * Protocolo, uma linha ASCII por mensagem, terminada em `\n`:
  *
- *   ESP32 → módulo   PING                 a cada 2 s, só com o módulo presente
- *                     FEED [grãos]        grãos omitido = padrão do módulo
+ *   ESP32 → módulo   PING                       a cada 2 s, só com o módulo presente
+ *                     FEED [grãos] [FORCE]      grãos omitido = padrão do módulo;
+ *                                               FORCE ignora o limite de 24 h (só o app)
  *                     CFG <h1> <h2> <grãos> <0|1>
  *
- *   módulo → ESP32   PONG <h1> <h2> <grãos> <auto> <idade_s> <req> <conf> <ok>
+ *   módulo → ESP32   PONG <h1> <h2> <grãos> <auto> <idade_s> <req> <conf> <ok> [<refeições_24h>]
  *                     SCHEDULE <h1> <h2> <grãos> <auto>   — empurrado sozinho a cada reconexão
- *                     FED <req> <conf> <ok>                — resultado de uma alimentação
+ *                     FED <req> <conf> <ok> [<motivo> [<origem>]]
+ *                                               — resultado de uma alimentação
+ *                     DENIED <motivo> <refeições_24h> [<origem>]
+ *                                               — pedido recusado pelo módulo
+ *
+ *   motivo do FED     OK | SENSOR (autoteste falhou, contou pelo servo) | VAZIO (nenhum grão caiu)
+ *   motivo do DENIED  LIMITE (3 refeições em 24 h) | OCUPADO (outra refeição em andamento)
+ *   origem            AGENDA | RECUP | BOTAO | APP | FORCADO
+ *
+ * Os campos entre colchetes chegaram com o firmware 1.0 do módulo; um módulo
+ * anterior que não os mande continua entendido.
  *
  * `FEED` e `CFG` só saem com o módulo conectado (`connected`, linha válida nos
  * últimos 6 s) — quem decide é o `loop()`, que recusa o comando caso contrário.
  */
+
+/** `meals_24h` antes de o módulo dizer quantas refeições houve. */
+static const uint8_t FEEDER_MEALS_UNKNOWN = 0xFF;
 
 struct FeederLinkState {
   bool     connected;
@@ -52,6 +66,8 @@ struct FeederLinkState {
   uint8_t  last_feed_requested;
   uint8_t  last_feed_confirmed;
   bool     last_feed_ok;
+  /** Refeições nas últimas 24 h, contadas pelo módulo; `FEEDER_MEALS_UNKNOWN` antes de ele dizer. */
+  uint8_t  meals_24h;
 };
 
 void feeder_link_init();
@@ -65,8 +81,12 @@ void feeder_link_update();
 /** O módulo está fisicamente no fio (RX em nível alto)? Seguro de qualquer núcleo. */
 bool feeder_link_present();
 
-/** Pede uma alimentação manual. `grains == 0` usa o padrão configurado no módulo. */
-void feeder_link_request_feed(uint8_t grains);
+/**
+ * Pede uma alimentação manual. `grains == 0` usa o padrão configurado no
+ * módulo; `force` passa por cima do limite de refeições em 24 h — só o app
+ * pede isso.
+ */
+void feeder_link_request_feed(uint8_t grains, bool force);
 
 /** Substitui a agenda inteira do módulo — nunca um campo isolado (ver contrato, `feeder.set_config`). */
 void feeder_link_request_config(uint8_t hour1, uint8_t hour2,

@@ -87,6 +87,8 @@ struct DeviceSnapshot {
   uint8_t       feeder_last_feed_requested;
   uint8_t       feeder_last_feed_confirmed;
   bool          feeder_last_feed_ok;
+  /** Refeições nas últimas 24 h, contadas pelo módulo. `FEEDER_MEALS_UNKNOWN` antes de ele dizer. */
+  uint8_t       feeder_meals_24h;
 };
 
 const char* light_source_name(LightSource s);
@@ -126,6 +128,9 @@ struct PendingCommand {
   uint8_t     feeder_hour2;
   uint8_t     feeder_grains;
   bool        feeder_auto_enabled;
+  // CMD_FEEDER_FEED_NOW: alimenta mesmo com o limite de 24 h atingido. Só o
+  // app manda isto; o botão do módulo nunca passa do limite.
+  bool        feeder_force;
 };
 
 static const uint8_t ACK_CODE_LEN = 32;

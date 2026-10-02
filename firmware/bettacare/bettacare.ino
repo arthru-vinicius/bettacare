@@ -102,7 +102,11 @@ static void _drain_commands() {
         // (grãos pedidos × confirmados) chega depois no bloco `feeder` da
         // telemetria, mesmo desenho de CMD_DEVICE_DIAGNOSE.
         if (feeder_link_get_state().connected) {
-          feeder_link_request_feed(cmd.feeder_grains);
+          feeder_link_request_feed(cmd.feeder_grains, cmd.feeder_force);
+          if (cmd.feeder_force) {
+            event_log(SEV_WARN, COMP_FEEDER, "feeder.limit_overridden",
+                      "Limite de refeicoes em 24 h ignorado pelo app; alimentando mesmo assim");
+          }
           app_state_push_ack(cmd.id, true, nullptr);
         } else {
           app_state_push_ack(cmd.id, false, "feeder.module_offline");
@@ -174,6 +178,7 @@ static void _publish_snapshot() {
   s.feeder_last_feed_requested  = fs.last_feed_requested;
   s.feeder_last_feed_confirmed  = fs.last_feed_confirmed;
   s.feeder_last_feed_ok         = fs.last_feed_ok;
+  s.feeder_meals_24h            = fs.meals_24h;
 
   app_state_publish(s);
 }

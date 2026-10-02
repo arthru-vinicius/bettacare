@@ -73,8 +73,11 @@ export function formatDateTime(iso: string | null | undefined): string {
 /** "há 3 min", "há 2 h". Mais legível que um horário absoluto para durações curtas. */
 export function timeAgo(iso: string | null | undefined): string {
   if (!iso) return "—";
-  const ms = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(ms / 1000);
+  return secondsAgo(Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+}
+
+/** "há 3 min" a partir de uma idade já em segundos — sem relógio, pura. */
+export function secondsAgo(s: number): string {
   if (s < 60) return "agora há pouco";
   const min = Math.floor(s / 60);
   if (min < 60) return `há ${min} min`;

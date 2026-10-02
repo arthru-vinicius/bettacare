@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useEffectEvent, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 
 /**
@@ -29,17 +29,17 @@ export function Sheet({
 }) {
   const id = useId();
   const painel = useRef<HTMLDivElement>(null);
-  // Por ref, não como dependência: a tela de origem re-renderiza a cada
+  // Evento de efeito, não dependência: a tela de origem re-renderiza a cada
   // consulta (2 s) com um `onClose` novo, e um efeito que dependesse dele
-  // devolveria o foco ao painel no meio da digitação.
-  const fechar = useRef(onClose);
-  fechar.current = onClose;
+  // devolveria o foco ao painel no meio da digitação. O `useEffectEvent`
+  // sempre chama o `onClose` mais recente sem reexecutar o efeito.
+  const fechar = useEffectEvent(onClose);
 
   useEffect(() => {
     const anterior = document.activeElement as HTMLElement | null;
     painel.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") fechar.current();
+      if (e.key === "Escape") fechar();
     };
     document.addEventListener("keydown", onKey);
     return () => {

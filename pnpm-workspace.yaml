@@ -3,5 +3,11 @@ packages:
   - "packages/*"
 # O drizzle-kit depende do esbuild, cujo postinstall busca o binário da
 # plataforma. Sem isso o `db:generate` não roda.
+#
+# O unrs-resolver (resolver de imports do eslint-config-next) não precisa do
+# dele: o binário nativo já vem pela dependência opcional da plataforma, e o
+# script só conferiria isso. Negado explicitamente — sem decisão, o pnpm 11
+# recusa o install e o CI quebra.
 allowBuilds:
   esbuild: true
+  unrs-resolver: false

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { CommandStatus } from "@/components/CommandStatus";
 import { IconFeeder } from "@/components/icons";
-import { timeAgo } from "@/lib/format";
+import { secondsAgo } from "@/lib/format";
 import type { CommandFeedback } from "@/lib/useDevice";
 
 const HOUR_MIN = 0;
@@ -144,7 +144,7 @@ export function Feeder({
               grãos
             </div>
             <div className="c-sub">
-              {timeAgo(new Date(Date.now() - feeder.last_feed_age_s * 1000).toISOString())}
+              {secondsAgo(feeder.last_feed_age_s)}
               {feeder.last_feed_ok === false ? " · incompleta" : ""}
             </div>
           </>

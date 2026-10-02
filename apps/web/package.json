@@ -7,7 +7,7 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack && node scripts/stamp-version.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "next lint"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@bettacare/contract": "workspace:*",
@@ -19,6 +19,8 @@
     "@types/node": "^22.18.10",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.1",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.8",
     "typescript": "^5.9.3"
   }
 }

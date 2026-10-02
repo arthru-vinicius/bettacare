@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" width="900" height="600" font-family="sans-serif" font-size="13" fill="#222">
+  <title>Croqui lateral do módulo alimentador (sem escala)</title>
+  <defs>
+    <marker id="seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/>
+    </marker>
+    <marker id="ponta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+    <pattern id="hachura" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="6" stroke="#777" stroke-width="2"/>
+    </pattern>
+  </defs>
+
+  <!-- fundo branco: legível no tema escuro do GitHub -->
+  <rect x="0" y="0" width="900" height="600" fill="#ffffff"/>
+
+  <!-- mesa -->
+  <rect x="20" y="520" width="860" height="16" fill="#d8c3a5" stroke="#8a7357"/>
+  <text x="30" y="555">mesa</text>
+
+  <!-- aquário -->
+  <rect x="568" y="285" width="312" height="227" fill="#dcf0fb"/>
+  <rect x="560" y="250" width="8" height="270" fill="#cfe8f3" stroke="#6b8fa3"/>
+  <rect x="560" y="512" width="320" height="8" fill="#cfe8f3" stroke="#6b8fa3"/>
+  <line x1="568" y1="285" x2="880" y2="285" stroke="#3b82b0" stroke-width="2"/>
+  <line x1="568" y1="305" x2="880" y2="305" stroke="#3b82b0" stroke-width="1" stroke-dasharray="6 4"/>
+  <text x="652" y="279" font-size="12" fill="#2c6a91">nível máximo</text>
+  <text x="700" y="320" font-size="12" fill="#2c6a91">nível mínimo (evaporação)</text>
+  <text x="700" y="470" font-size="14" fill="#2c6a91">aquário</text>
+
+  <!-- EVA e base -->
+  <rect x="150" y="512" width="260" height="8" fill="url(#hachura)" stroke="#4d8a55"/>
+  <rect x="150" y="512" width="260" height="8" fill="#9ad0a0" fill-opacity="0.6"/>
+  <rect x="150" y="448" width="260" height="64" rx="6" fill="#efefef" stroke="#444"/>
+  <rect x="160" y="488" width="70" height="18" fill="url(#hachura)" stroke="#666"/>
+  <polygon points="168,470 210,462 212,476 170,484" fill="#333"/>
+  <circle cx="226" cy="470" r="5" fill="#777" stroke="#333"/>
+
+  <!-- torre -->
+  <rect x="360" y="148" width="32" height="300" fill="#f6f6f6" stroke="#444"/>
+  <line x1="368" y1="160" x2="368" y2="440" stroke="#999" stroke-dasharray="5 4"/>
+  <line x1="384" y1="160" x2="384" y2="440" stroke="#999" stroke-dasharray="5 4"/>
+  <line x1="376" y1="135" x2="376" y2="530" stroke="#aaa" stroke-width="1" stroke-dasharray="2 4"/>
+
+  <!-- topo -->
+  <rect x="330" y="40" width="195" height="110" rx="6" fill="#f6f6f6" stroke="#444"/>
+  <rect x="345" y="44" width="110" height="8" fill="#bbb" stroke="#555"/>
+  <polygon points="350,52 450,52 418,100 382,100" fill="#fff3d6" stroke="#8a6d2a"/>
+  <rect x="424" y="78" width="6" height="12" fill="#333"/>
+  <rect x="462" y="58" width="36" height="34" fill="#5b7bb5" stroke="#2f4a7a"/>
+  <rect x="372" y="102" width="140" height="5" fill="#e8c46a" stroke="#8a6d2a"/>
+  <rect x="488" y="108" width="24" height="34" fill="#444"/>
+  <line x1="484" y1="124" x2="516" y2="124" stroke="#e74c3c" stroke-width="2" stroke-dasharray="3 2"/>
+
+  <!-- calha, com o M2 e a haste na ponta -->
+  <polygon points="504.2,135.8 614.2,245.8 605.8,254.2 495.8,144.2" fill="#ece6f8" stroke="#444"/>
+  <line x1="500" y1="140" x2="610" y2="250" stroke="#7a6fb0" stroke-dasharray="4 3"/>
+  <rect x="616" y="230" width="28" height="16" fill="#5b7bb5" stroke="#2f4a7a"/>
+  <line x1="630" y1="246" x2="630" y2="290" stroke="#555" stroke-width="3"/>
+  <rect x="624" y="286" width="12" height="6" fill="#555"/>
+  <path d="M612,284 q6,-4 12,0 M636,284 q6,-4 12,0" stroke="#3b82b0" fill="none"/>
+  <circle cx="610" cy="262" r="2.5" fill="#8a6d2a"/>
+  <circle cx="610" cy="274" r="2.5" fill="#8a6d2a"/>
+
+  <!-- cotas -->
+  <line x1="860" y1="518" x2="860" y2="252" stroke="#c0392b" marker-start="url(#seta)" marker-end="url(#seta)"/>
+  <text x="852" y="400" fill="#c0392b" transform="rotate(-90 852 400)">H_borda</text>
+  <line x1="568" y1="250" x2="880" y2="250" stroke="#aaa" stroke-dasharray="3 3"/>
+  <line x1="840" y1="252" x2="840" y2="283" stroke="#c0392b" marker-start="url(#seta)" marker-end="url(#seta)"/>
+  <text x="764" y="272" fill="#c0392b" font-size="12">h_agua_max</text>
+  <line x1="594" y1="252" x2="594" y2="283" stroke="#c0392b" marker-start="url(#seta)" marker-end="url(#seta)"/>
+  <text x="573" y="300" fill="#c0392b" font-size="12">H_queda</text>
+  <line x1="378" y1="425" x2="558" y2="425" stroke="#c0392b" marker-start="url(#seta)" marker-end="url(#seta)"/>
+  <text x="440" y="419" fill="#c0392b">D_torre</text>
+  <line x1="560" y1="248" x2="560" y2="84" stroke="#aaa" stroke-dasharray="3 3"/>
+  <line x1="527" y1="100" x2="558" y2="100" stroke="#c0392b" marker-start="url(#seta)" marker-end="url(#seta)"/>
+  <text x="527" y="93" fill="#c0392b" font-size="12">≥ F_min</text>
+  <line x1="570" y1="226" x2="608" y2="226" stroke="#c0392b" marker-start="url(#seta)" marker-end="url(#seta)"/>
+  <text x="613" y="222" fill="#c0392b" font-size="12">A_bico</text>
+  <line x1="568" y1="248" x2="568" y2="212" stroke="#c0392b" marker-start="url(#seta)" marker-end="url(#seta)"/>
+  <text x="472" y="236" fill="#c0392b" font-size="12">folga ≥ F_min</text>
+  <path d="M530,140 A30,30 0 0 1 521,161" stroke="#c0392b" fill="none"/>
+  <line x1="500" y1="140" x2="545" y2="140" stroke="#aaa" stroke-dasharray="3 3"/>
+  <text x="536" y="160" fill="#c0392b" font-size="12">θ ≥ 45°</text>
+
+  <!-- chamadas -->
+  <g font-size="12" fill="#333">
+    <line x1="300" y1="50" x2="350" y2="66" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="150" y="40">reservatório, tampa vedada</text>
+    <text x="150" y="55">(+ sachê de sílica-gel)</text>
+    <line x1="300" y1="92" x2="422" y2="85" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="196" y="96">M1 (fora do funil)</text>
+    <line x1="560" y1="40" x2="500" y2="62" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="562" y="44">servo</text>
+    <line x1="300" y1="122" x2="372" y2="106" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="196" y="126">slide (o doseador)</text>
+    <line x1="590" y1="110" x2="514" y2="122" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="592" y="106">bloco do sensor:</text>
+    <text x="592" y="121">par IR + LM393</text>
+    <line x1="690" y1="196" x2="566" y2="203" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="692" y="192">calha ≥ 45°, forrada</text>
+    <text x="692" y="207">de tubo de PTFE 4 × 6</text>
+    <line x1="700" y1="236" x2="646" y2="238" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="702" y="240">M2 (junta de TPU)</text>
+    <line x1="652" y1="346" x2="633" y2="294" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="654" y="350">haste do M2: a única peça</text>
+    <text x="654" y="365">que toca o aquário (na água)</text>
+    <line x1="300" y1="300" x2="366" y2="300" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="160" y="296">torre oca: só os 12 fios</text>
+    <text x="160" y="311">(nada de I²C)</text>
+    <text x="246" y="476">display + botão</text>
+    <text x="246" y="500">ESP32-C3, DS3231, buck</text>
+    <line x1="120" y1="497" x2="160" y2="497" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="36" y="501">lastro</text>
+    <line x1="120" y1="530" x2="180" y2="517" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="70" y="580">EVA macio colado (ou suporte na lateral da mesa com coxins)</text>
+  </g>
+
+  <text x="430" y="590" font-size="12" fill="#666">Sem escala. Os nomes em vermelho são os parâmetros de medidas-iniciais.md.</text>
+</svg>

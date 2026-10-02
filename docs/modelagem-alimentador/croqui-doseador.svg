@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 640" width="900" height="640" font-family="sans-serif" font-size="13" fill="#222">
+  <title>Corte do doseador (sem escala, ~10 px por mm no canal e no sensor)</title>
+  <defs>
+    <marker id="seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/>
+    </marker>
+    <marker id="ponta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="640" fill="#ffffff"/>
+
+  <!-- reservatório e funil -->
+  <rect x="130" y="24" width="300" height="12" fill="#bbb" stroke="#555"/>
+  <polygon points="140,36 420,36 300,196 260,196" fill="#fff3d6" stroke="#8a6d2a"/>
+  <g fill="#c9a04a">
+    <circle cx="250" cy="120" r="5"/><circle cx="264" cy="128" r="5"/><circle cx="278" cy="121" r="5"/>
+    <circle cx="292" cy="130" r="5"/><circle cx="306" cy="122" r="5"/><circle cx="271" cy="142" r="5"/>
+    <circle cx="285" cy="146" r="5"/><circle cx="299" cy="142" r="5"/><circle cx="278" cy="162" r="5"/>
+    <circle cx="236" cy="108" r="5"/><circle cx="320" cy="110" r="5"/><circle cx="262" cy="178" r="5"/>
+  </g>
+  <rect x="345" y="140" width="10" height="22" fill="#333" transform="rotate(-53 350 151)"/>
+
+  <!-- teto do canal, com a saída alargando para cima -->
+  <polygon points="60,200 248,200 262,214 262,230 60,230" fill="#d9d9d9" stroke="#555"/>
+  <polygon points="312,200 700,200 700,230 298,230 298,214" fill="#d9d9d9" stroke="#555"/>
+
+  <!-- slide, em repouso: o bolso sob a saída, com um grão -->
+  <rect x="80" y="231" width="560" height="13" fill="#f4d58d" stroke="#8a6d2a"/>
+  <rect x="273" y="231" width="14" height="13" fill="#ffffff" stroke="#8a6d2a"/>
+  <circle cx="280" cy="238" r="5" fill="#c9a04a"/>
+  <!-- ponta do slide, mais grossa, com o pino do servo -->
+  <rect x="640" y="222" width="70" height="30" fill="#f4d58d" stroke="#8a6d2a"/>
+  <rect x="668" y="222" width="14" height="30" fill="#ffffff" stroke="#8a6d2a"/>
+  <circle cx="675" cy="237" r="6" fill="#555"/>
+  <rect x="650" y="140" width="56" height="62" fill="#5b7bb5" stroke="#2f4a7a"/>
+  <line x1="675" y1="202" x2="675" y2="231" stroke="#555" stroke-width="4"/>
+
+  <!-- piso do canal, com a boca do tubo -->
+  <rect x="60" y="245" width="285" height="15" fill="#d9d9d9" stroke="#555"/>
+  <rect x="375" y="245" width="325" height="15" fill="#d9d9d9" stroke="#555"/>
+
+  <!-- bloco do sensor -->
+  <rect x="290" y="260" width="140" height="150" fill="#3a3a3a"/>
+  <polygon points="345,260 375,260 380,270 380,410 340,410 340,270" fill="#ffffff"/>
+  <rect x="296" y="320" width="34" height="20" rx="4" fill="#9b59b6"/>
+  <rect x="390" y="320" width="34" height="20" rx="4" fill="#7f8c8d"/>
+  <rect x="330" y="327" width="10" height="6" fill="#ffffff"/>
+  <rect x="380" y="327" width="10" height="6" fill="#ffffff"/>
+  <line x1="330" y1="330" x2="390" y2="330" stroke="#e74c3c" stroke-width="2" stroke-dasharray="4 3"/>
+
+  <!-- curva e calha forrada de PTFE -->
+  <path d="M340,410 L340,430 Q340,460 365,480 L470,585" stroke="#555" fill="none" stroke-width="2"/>
+  <path d="M380,410 L380,425 Q382,445 400,460 L505,565" stroke="#555" fill="none" stroke-width="2"/>
+  <path d="M360,410 L360,430 Q362,455 383,470 L488,575" stroke="#7a6fb0" fill="none" stroke-dasharray="4 3"/>
+
+  <!-- eixos e cotas -->
+  <line x1="280" y1="185" x2="280" y2="620" stroke="#aaa" stroke-dasharray="2 4"/>
+  <line x1="360" y1="250" x2="360" y2="620" stroke="#aaa" stroke-dasharray="2 4"/>
+  <line x1="282" y1="610" x2="358" y2="610" stroke="#c0392b" marker-start="url(#seta)" marker-end="url(#seta)"/>
+  <text x="290" y="630" fill="#c0392b">S_curso</text>
+  <line x1="448" y1="262" x2="448" y2="328" stroke="#c0392b" marker-start="url(#seta)" marker-end="url(#seta)"/>
+  <text x="456" y="300" fill="#c0392b" font-size="12">6–8 mm</text>
+  <line x1="40" y1="231" x2="40" y2="244" stroke="#c0392b" marker-start="url(#seta)" marker-end="url(#seta)"/>
+  <text x="14" y="270" fill="#c0392b" font-size="12">t = p_bolso</text>
+  <line x1="96" y1="238" x2="250" y2="238" stroke="#c0392b" marker-start="url(#seta)" marker-end="url(#seta)"/>
+  <text x="130" y="226" fill="#c0392b" font-size="12" stroke="#ffffff" stroke-width="3" paint-order="stroke">slide: vaivém</text>
+
+  <!-- chamadas -->
+  <g font-size="12" fill="#333">
+    <text x="450" y="30">tampa vedada (+ sachê de sílica-gel)</text>
+    <line x1="510" y1="70" x2="398" y2="90" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="512" y="66">funil: paredes a ≥ 60°, liso</text>
+    <line x1="510" y1="130" x2="360" y2="152" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="512" y="126">M1, colado por fora do funil</text>
+    <line x1="160" y1="170" x2="262" y2="210" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="40" y="160">saída Ø 4, alargando para cima:</text>
+    <text x="40" y="175">grão meio dentro volta ao funil</text>
+    <line x1="150" y1="300" x2="272" y2="240" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="40" y="318">bolso: furo passante p_bolso,</text>
+    <text x="40" y="333">cabe um grão (repouso)</text>
+    <line x1="150" y1="370" x2="200" y2="252" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="40" y="388">piso do canal</text>
+    <line x1="520" y1="250" x2="378" y2="256" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="522" y="254">boca do tubo Ø 3 → Ø 4</text>
+    <line x1="740" y1="168" x2="708" y2="170" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="742" y="164">servo; pino num</text>
+    <text x="742" y="179">rasgo transversal</text>
+    <text x="742" y="194">(jugo escocês, r ≈ 8 mm)</text>
+    <line x1="520" y1="350" x2="426" y2="334" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="522" y="346">fototransistor; janela Ø 2 ou fenda 1 × 3</text>
+    <line x1="230" y1="420" x2="300" y2="336" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="120" y="438">LED IR, frente a frente</text>
+    <line x1="520" y1="400" x2="432" y2="396" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="522" y="396">bloco do sensor: peça própria,</text>
+    <text x="522" y="411">opaca ao infravermelho</text>
+    <line x1="600" y1="490" x2="420" y2="492" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="602" y="486">curva de raio ≥ 15 mm</text>
+    <line x1="600" y1="545" x2="492" y2="548" stroke="#555" marker-end="url(#ponta)"/>
+    <text x="602" y="541">calha ≥ 45°, forrada de</text>
+    <text x="602" y="556">tubo de PTFE 4 × 6 → até a água</text>
+  </g>
+
+  <text x="560" y="610" font-size="12" fill="#666">Desenhado em repouso. No despejo, o slide</text>
+  <text x="560" y="625" font-size="12" fill="#666">anda S_curso e o bolso fica sobre a boca do tubo.</text>
+</svg>

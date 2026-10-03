@@ -43,12 +43,11 @@ describe("rollup horário", { skip: url ? false : "DATABASE_URL não definida" }
   it("pondera pela duração e não confunde ausência com hora cheia", async () => {
     // Um dia inteiro de ontem, amostra a cada 5 min. Luz das 10h às 17h
     // (7 horas), ventoinha das 13h às 15h (2 horas).
-    await rt.db.execute(sql`
-      delete from telemetry
-       where device_id = 'teste-rollup'
-         and received_at >= date_trunc('day', now() - interval '1 day')
-         and received_at <  date_trunc('day', now());
-    `);
+    //
+    // Limpa o dispositivo de teste inteiro, não só o "ontem": o rollup
+    // pendente reagrega toda hora sem linha em `telemetry_hourly`, e o "ontem"
+    // de uma rodada de outro dia ficaria no banco somando em dobro.
+    await rt.db.execute(sql`delete from telemetry where device_id = 'teste-rollup'`);
     await rt.db.execute(sql`delete from telemetry_hourly where device_id = 'teste-rollup'`);
     await rt.db.execute(sql`
       insert into devices (device_id) values ('teste-rollup')

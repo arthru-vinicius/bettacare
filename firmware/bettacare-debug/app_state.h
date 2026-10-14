@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 
+#include "command_dedupe.h"
+
 /**
  * A fronteira entre os dois núcleos.
  *
@@ -62,6 +64,9 @@ struct DeviceSnapshot {
   bool          wifi_rssi_valid;  // falso se não havia associação no instante da leitura
   char          wifi_ip[16];
   uint16_t      wifi_reconnects;
+  char          wifi_bssid[18];   // "" se desconectado — roteador ou repetidor?
+  uint8_t       wifi_channel;     // 0 se desconectado
+  uint8_t       wifi_last_reason; // motivo da última queda; 0 = nenhuma desde o boot
 
   uint32_t      uptime_ms;
 
@@ -158,8 +163,22 @@ bool app_state_push_command(const PendingCommand& cmd);
 /** O loop consome os comandos pendentes, um por chamada. */
 bool app_state_pop_command(PendingCommand& out);
 
-/** O loop confirma (ou recusa) um comando executado. */
+/**
+ * O loop confirma (ou recusa) um comando executado. O desfecho também fica na
+ * memória de comandos recentes (`command_dedupe.h`), para uma reentrega ser
+ * confirmada de novo sem executar.
+ */
 bool app_state_push_ack(uint32_t id, bool ok, const char* code);
+
+/**
+ * A task de rede pergunta, para cada comando que chega, se ele é novo.
+ *
+ * `DEDUPE_NEW`: enfileirar e executar. `DEDUPE_PENDING`: já está na fila ou
+ * executando — ignorar. `DEDUPE_DONE`: já executado — não executar de novo;
+ * a confirmação é reempilhada aqui mesmo (se não estiver esperando envio),
+ * porque a anterior pode ter se perdido junto com a resposta do servidor.
+ */
+DedupeVerdict app_state_receive_command(uint32_t id);
 
 /**
  * Copia até `max` confirmações pendentes **sem removê-las** — para montar o

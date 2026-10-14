@@ -21,7 +21,7 @@
 // --- Identidade do dispositivo -----------------------------------------------
 // Precisa casar com o slug usado no servidor: minúsculas, dígitos e hífen.
 #define DEVICE_ID      "aquarium-01"
-#define FW_VERSION     "2.1.0-debug"
+#define FW_VERSION     "2.1.1-debug"
 
 // --- Wi-Fi -------------------------------------------------------------------
 #define WIFI_SSID      "YOUR_NETWORK_HERE"
@@ -30,6 +30,14 @@
 #define WIFI_RECOVERY_TIMEOUT_MS    180000UL  // após esse tempo offline, habilita AP de recuperação
 #define WIFI_RECOVERY_MAX_ATTEMPTS  12        // ou após esse número de tentativas sem sucesso
 #define WIFI_RECOVERY_AP_SSID_PREFIX "BettaCare-Setup"
+
+// Tolerância a Wi-Fi ruim (2.1.1). Todos opcionais — os padrões estão em
+// `wifi_manager.cpp`, com o motivo de cada um.
+// #define WIFI_BEACON_TIMEOUT_S     20       // s sem beacon antes de desassociar (ESP-IDF: 6)
+// #define WIFI_RADIO_RESTART_MS     600000UL // sem Wi-Fi por isso, religa o rádio
+// #define WIFI_PIN_FALLBACK_MS      300000UL // AP fixado sumido por isso: usa o mais forte
+// #define WIFI_PIN_RETURN_CHECK_MS  1800000UL // no fallback, procura o fixado a cada isso
+// O ponto de acesso (roteador ou repetidor) é fixado em /wifi-setup, não aqui.
 
 // --- Rede (IP estático ou DHCP) -----------------------------------------------
 // "0.0.0.0" usa DHCP. Com o servidor nunca iniciando conexão, o IP do ESP32
@@ -52,9 +60,12 @@
 // Precisa ser idêntico ao DEVICE_INGEST_TOKEN do servidor.
 #define SERVER_API_TOKEN    "REPLACE_WITH_THE_SAME_TOKEN_AS_THE_SERVER"
 
-// Timeout de uma requisição inteira. Roda na task de rede, então bloquear aqui
-// não afeta o botão físico nem a histerese da ventoinha.
-#define HTTP_TIMEOUT_MS     4000
+// Prazos do POST: conectar e esperar a resposta. Roda na task de rede, então
+// bloquear aqui não afeta o botão físico nem a histerese da ventoinha. Opcionais
+// (padrões em `api_client.cpp`). Até a 2.1.0 era um só, `HTTP_TIMEOUT_MS` de
+// 4 s — curto para um Wi-Fi que perde pacote; ele não é mais lido.
+// #define HTTP_CONNECT_TIMEOUT_MS 7000
+// #define HTTP_READ_TIMEOUT_MS    8000
 
 // --- Padrões usados antes do primeiro contato com o servidor -----------------
 // Depois do primeiro POST bem-sucedido, quem manda é o servidor.

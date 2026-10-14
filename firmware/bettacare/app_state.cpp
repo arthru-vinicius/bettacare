@@ -27,7 +27,9 @@ static QueueHandle_t     _commands = nullptr;
  */
 static CommandAck        _acks[ACK_QUEUE_LEN];
 static uint8_t           _ack_count  = 0;
+/** Protege `_acks` **e** `_dedupe`: todo `ack` registra o desfecho nos dois. */
 static SemaphoreHandle_t _acks_mutex = nullptr;
+static CommandDedupe     _dedupe;
 /**
  * Contagem de confirmações empilhadas. Só cresce; escrita sob `_acks_mutex`,
  * lida solta (palavra única).
@@ -66,6 +68,7 @@ void app_state_init() {
   _commands       = xQueueCreate(COMMAND_QUEUE_LEN, sizeof(PendingCommand));
   _acks_mutex     = xSemaphoreCreateMutex();
   _ack_count      = 0;
+  _dedupe.reset();
   memset(&_snapshot, 0, sizeof(_snapshot));
   _has_snapshot = false;
 }
@@ -104,27 +107,60 @@ bool app_state_pop_command(PendingCommand& out) {
   return xQueueReceive(_commands, &out, 0) == pdTRUE;
 }
 
+/** Empilha um `ack`. Só pode ser chamada segurando `_acks_mutex`. */
+static bool _push_ack_locked(uint32_t id, bool ok, const char* code) {
+  if (_ack_count >= ACK_QUEUE_LEN) return false;
+
+  CommandAck& ack = _acks[_ack_count];
+  ack.id = id;
+  ack.ok = ok;
+  if (ok || code == nullptr) {
+    ack.code[0] = '\0';
+  } else {
+    strncpy(ack.code, code, ACK_CODE_LEN - 1);
+    ack.code[ACK_CODE_LEN - 1] = '\0';
+  }
+  _ack_count++;
+  _ack_generation = _ack_generation + 1;
+  return true;
+}
+
 bool app_state_push_ack(uint32_t id, bool ok, const char* code) {
   if (_acks_mutex == nullptr) return false;
   if (xSemaphoreTake(_acks_mutex, pdMS_TO_TICKS(50)) != pdTRUE) return false;
 
-  bool coube = _ack_count < ACK_QUEUE_LEN;
-  if (coube) {
-    CommandAck& ack = _acks[_ack_count];
-    ack.id = id;
-    ack.ok = ok;
-    if (ok || code == nullptr) {
-      ack.code[0] = '\0';
-    } else {
-      strncpy(ack.code, code, ACK_CODE_LEN - 1);
-      ack.code[ACK_CODE_LEN - 1] = '\0';
-    }
-    _ack_count++;
-    _ack_generation = _ack_generation + 1;
-  }
+  // O desfecho fica na memória mesmo que o buffer de acks esteja cheio: na
+  // reentrega seguinte ele é confirmado de novo, em vez de executado de novo.
+  _dedupe.settle(id, ok, code);
+  bool coube = _push_ack_locked(id, ok, code);
 
   xSemaphoreGive(_acks_mutex);
   return coube;
+}
+
+DedupeVerdict app_state_receive_command(uint32_t id) {
+  // Sem mutex (antes do init) não há como lembrar nada: trata como novo, que
+  // é o comportamento de antes desta memória existir.
+  if (_acks_mutex == nullptr) return DEDUPE_NEW;
+  if (xSemaphoreTake(_acks_mutex, pdMS_TO_TICKS(50)) != pdTRUE) return DEDUPE_PENDING;
+
+  bool ok = false;
+  char code[DEDUPE_CODE_LEN];
+  DedupeVerdict v = _dedupe.receive(id, &ok, code, sizeof(code));
+
+  if (v == DEDUPE_DONE) {
+    bool ja_na_fila = false;
+    for (uint8_t i = 0; i < _ack_count; i++) {
+      if (_acks[i].id == id) {
+        ja_na_fila = true;
+        break;
+      }
+    }
+    if (!ja_na_fila) _push_ack_locked(id, ok, ok ? nullptr : code);
+  }
+
+  xSemaphoreGive(_acks_mutex);
+  return v;
 }
 
 uint8_t app_state_peek_acks(CommandAck* out, uint8_t max) {

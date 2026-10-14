@@ -129,18 +129,33 @@ void event_log_confirm_sent(uint8_t n) {
   xSemaphoreGive(_mutex);
 }
 
+/**
+ * O que sobrevive a um POST que falhou: os graves, e o diagnóstico de rede.
+ *
+ * Os eventos de Wi-Fi e o resumo de um período sem contato são `info`/`warn`,
+ * mas são justamente a explicação da falha — e o primeiro POST depois de
+ * reassociar costuma falhar. Até a 2.1.0 eles iam embora nesse momento: em 69
+ * h de produção com 10 quedas de Wi-Fi, nenhum `wifi.disconnected` chegou ao
+ * banco (2026-10-14). São raros (um por queda, deduplicados), então não
+ * engordam o corpo que tenta passar por um link ruim.
+ */
+static bool _keep_after_failure(const LogEvent& e) {
+  return e.sev >= SEV_ERROR || e.comp == COMP_WIFI ||
+         strncmp(e.code, "api.outage", 10) == 0;
+}
+
 void event_log_release_sent(uint8_t n) {
   if (_mutex == nullptr || n == 0) return;
   if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return;
 
   if (n > _count) n = _count;
 
-  // Compacta os `n` primeiros em cima de si mesmos, mantendo só os graves.
-  // Os que vieram depois (registrados enquanto o POST acontecia) não são
-  // tocados: eles nunca chegaram a sair.
+  // Compacta os `n` primeiros em cima de si mesmos, mantendo só os graves e
+  // os de rede. Os que vieram depois (registrados enquanto o POST acontecia)
+  // não são tocados: eles nunca chegaram a sair.
   uint8_t mantidos = 0;
   for (uint8_t i = 0; i < n; i++) {
-    if (_buf[i].sev >= SEV_ERROR) {
+    if (_keep_after_failure(_buf[i])) {
       if (mantidos != i) _buf[mantidos] = _buf[i];
       mantidos++;
     }

@@ -164,6 +164,9 @@ static void _publish_snapshot() {
   s.wifi_reconnects = wifi_reconnect_count();
   strncpy(s.wifi_ip, wifi_local_ip().c_str(), sizeof(s.wifi_ip) - 1);
   s.wifi_ip[sizeof(s.wifi_ip) - 1] = '\0';
+  wifi_current_bssid(s.wifi_bssid);
+  s.wifi_channel     = wifi_current_channel();
+  s.wifi_last_reason = wifi_last_disconnect_reason();
 
   s.uptime_ms = millis();
 

@@ -21,6 +21,34 @@
 #define BOOT_NS      "bc_boot"
 #define BOOT_KEY_ID  "boot_id"
 
+/**
+ * Prazos do POST. Eram 4 s para tudo (`HTTP_TIMEOUT_MS`, que segue no
+ * `config.h` antigo e não é mais lido).
+ *
+ * Com o Wi-Fi do aquário perdendo pacotes, 4 s não cobriam nem uma
+ * retransmissão: o lwIP reenvia um SYN perdido só depois de 3 s. 7 s para
+ * conectar deixam passar uma retransmissão; 8 s para a resposta, algumas de
+ * dado. O pior caso fica em ~16 s, longe do watchdog de 60 s da task de rede.
+ */
+#ifndef HTTP_CONNECT_TIMEOUT_MS
+#define HTTP_CONNECT_TIMEOUT_MS 7000
+#endif
+#ifndef HTTP_READ_TIMEOUT_MS
+#define HTTP_READ_TIMEOUT_MS 8000
+#endif
+
+/**
+ * A conexão com o servidor, mantida aberta entre POSTs (keep-alive).
+ *
+ * Até a 2.1.0 cada POST abria e fechava uma conexão TCP — três pacotes de
+ * aperto de mão e quatro de fechamento por envio, a cada 1 s. Num enlace que
+ * perde pacote, o aperto de mão é a parte mais frágil (o SYN perdido custa
+ * 3 s). Reaproveitando, um POST é só o pedido e a resposta. O servidor mantém
+ * a conexão ociosa por 75 s (`main.ts`), mais que qualquer recuo daqui.
+ */
+static WiFiClient _tcp;
+static HTTPClient _http;
+
 static uint32_t _boot_id = 0;
 static uint32_t _seq     = 0;
 static uint16_t _failures = 0;
@@ -164,6 +192,23 @@ static void _build_body(JsonDocument& doc, const DeviceSnapshot& s,
     wifi["ip"] = nullptr;
   }
   wifi["reconnects"] = s.wifi_reconnects;
+  // Roteador ou repetidor (mesmo nome de rede): só o BSSID diz. Nulos sem
+  // associação, nunca uma sentinela — a mesma regra do `rssi` acima.
+  if (s.wifi_bssid[0]) {
+    wifi["bssid"] = s.wifi_bssid;
+  } else {
+    wifi["bssid"] = nullptr;
+  }
+  if (s.wifi_channel > 0) {
+    wifi["channel"] = s.wifi_channel;
+  } else {
+    wifi["channel"] = nullptr;
+  }
+  if (s.wifi_last_reason > 0) {
+    wifi["last_disconnect_reason"] = s.wifi_last_reason;
+  } else {
+    wifi["last_disconnect_reason"] = nullptr;
+  }
 
   /**
    * Módulo opcional de alimentação: o bloco só vai com ele conectado — linha
@@ -353,6 +398,13 @@ static void _handle_response(JsonDocument& doc) {
 
     if (cmd.id == 0) continue;
 
+    // O servidor reentrega a cada POST até o `ack` — por até 15 min. Um comando
+    // já recebido não entra de novo na fila: se ainda não terminou, o `ack` sai
+    // quando terminar; se já terminou, `app_state_receive_command()` reempilha
+    // a confirmação, que pode ter se perdido. Uma alimentação nunca sai duas
+    // vezes por causa de uma resposta perdida.
+    if (app_state_receive_command(cmd.id) != DEDUPE_NEW) continue;
+
     if (cmd.kind == CMD_UNKNOWN) {
       // Um firmware antigo diante de um comando novo. Recusar com código
       // explícito é melhor que ignorar: o comando sai da fila do servidor e o
@@ -421,21 +473,45 @@ ApiResult api_client_post() {
   snprintf(url, sizeof(url), "http://%s:%d%s", SERVER_HOST, SERVER_PORT,
            SERVER_TELEMETRY_PATH);
 
-  WiFiClient client;
-  HTTPClient http;
-  http.setTimeout(HTTP_TIMEOUT_MS);
-  http.setConnectTimeout(HTTP_TIMEOUT_MS);
+  // Conexão do POST anterior ainda de pé? O `HTTPClient` a reaproveita.
+  bool reaproveitada = _tcp.connected();
 
-  if (!http.begin(client, url)) {
+  _http.setReuse(true);
+  _http.setConnectTimeout(HTTP_CONNECT_TIMEOUT_MS);
+  _http.setTimeout(HTTP_READ_TIMEOUT_MS);
+
+  if (!_http.begin(_tcp, url)) {
     _failures++;
     return API_HTTP_ERROR;
   }
 
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-Api-Token", SERVER_API_TOKEN);
+  _http.addHeader("Content-Type", "application/json");
+  _http.addHeader("X-Api-Token", SERVER_API_TOKEN);
 
   uint32_t inicio_post = millis();
-  int status = http.POST(corpo);
+  int status = _http.POST(corpo);
+
+  /**
+   * Conexão reaproveitada que o servidor já tinha fechado — um deploy, um
+   * reinício do container. O envio falha na hora, sem nada ter chegado lá.
+   * Repetir uma vez numa conexão nova não é reenvio arriscado (o servidor
+   * nem viu o primeiro), e evita contar como falha de rede o que foi só a
+   * conexão velha.
+   */
+  bool conexao_morta = status == HTTPC_ERROR_SEND_HEADER_FAILED ||
+                       status == HTTPC_ERROR_SEND_PAYLOAD_FAILED ||
+                       status == HTTPC_ERROR_NOT_CONNECTED ||
+                       status == HTTPC_ERROR_CONNECTION_LOST;
+  if (reaproveitada && conexao_morta) {
+    _http.end();
+    _tcp.stop();
+    if (_http.begin(_tcp, url)) {
+      _http.addHeader("Content-Type", "application/json");
+      _http.addHeader("X-Api-Token", SERVER_API_TOKEN);
+      status = _http.POST(corpo);
+    }
+  }
+
   _last_post_latency_ms = millis() - inicio_post;
   _has_post_latency = true;
   _last_http_status = status;
@@ -447,7 +523,7 @@ ApiResult api_client_post() {
 
   if (status == 200) {
     JsonDocument resp;
-    DeserializationError err = deserializeJson(resp, http.getStream());
+    DeserializationError err = deserializeJson(resp, _http.getStream());
     if (err) {
       resultado = API_BAD_RESPONSE;
     } else {
@@ -486,11 +562,16 @@ ApiResult api_client_post() {
     resultado = API_UNAUTHORIZED;
   } else if (status >= 500) {
     resultado = API_SERVER_ERROR;
+  } else if (status < 0) {
+    resultado = API_NET_ERROR;
   } else {
     resultado = API_HTTP_ERROR;
   }
 
-  http.end();
+  _http.end();
+  // Sem resposta inteira, a conexão pode ter ficado pela metade (com restos
+  // da resposta perdida ainda a caminho). Fecha: o próximo POST começa limpo.
+  if (resultado != API_OK) _tcp.stop();
 
   if (resultado != API_OK && status != 400) {
     _failures++;
@@ -510,13 +591,16 @@ ApiResult api_client_post() {
      */
     event_log_release_sent(n_eventos);
 
+    // Sem o número da tentativa na mensagem: a deduplicação do `event_log`
+    // soma as repetições no evento que ainda espera envio, e um "tentativa 1"
+    // com `repeat_count` 6 contava uma história errada (produção, 2026-10-13).
+    // O total do período vai no `api.outage_summary`, na volta.
     if (_failures == 1 || _failures % 20 == 0) {
       const char* motivo = resultado == API_UNAUTHORIZED ? "api.unauthorized"
                          : resultado == API_SERVER_ERROR ? "api.server_error"
                                                          : "api.post_failed";
       event_log(SEV_ERROR, COMP_API, motivo,
-                "Falha ao enviar telemetria (HTTP %d), tentativa %u",
-                status, (unsigned)_failures);
+                "Falha ao enviar telemetria (HTTP %d)", status);
     }
   }
 

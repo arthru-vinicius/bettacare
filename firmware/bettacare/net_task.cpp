@@ -7,6 +7,7 @@
 #include "config.h"
 #include "device_config.h"
 #include "event_log.h"
+#include "outage_tracker.h"
 #include "rtc_manager.h"
 #include "web_server.h"
 #include "wifi_manager.h"
@@ -29,7 +30,8 @@ static const BaseType_t  NET_TASK_CORE = 0;
 
 /**
  * Prazo do watchdog desta task (UPGRADE/03, F11). Generoso de propósito: cobre
- * o timeout de 4 s do HTTP com folga larga, então só dispara se a task
+ * o pior POST (~16 s com os prazos da 2.1.1, mais a repetição numa conexão
+ * nova) com folga larga, então só dispara se a task
  * realmente travar — dentro do `HTTPClient`, por exemplo, um cenário que o
  * compilador não tem como provar impossível. Sem isto, uma trava silenciosa
  * fazia o servidor marcar o dispositivo como offline enquanto ele seguia
@@ -45,6 +47,14 @@ static const uint32_t REBOOT_SAFETY_TIMEOUT_MS = 60000;
 static const uint32_t NTP_RESYNC_INTERVAL_MS = 24UL * 60 * 60 * 1000;
 
 static bool _ever_connected = false;
+
+/**
+ * Período sem contato a partir do qual a volta manda `api.outage_summary`.
+ * Abaixo disto é a perda de pacote de todo dia, que o `api.post_failed`
+ * já conta — um resumo por minuto seria ruído.
+ */
+static const uint32_t OUTAGE_SUMMARY_MIN_MS = 60000;
+static OutageTracker  _outage;
 
 bool net_task_ever_connected() { return _ever_connected; }
 
@@ -78,12 +88,20 @@ static void _net_loop(void*) {
   uint32_t ultima_tentativa_ntp = 0;
   /** 0 = nunca sincronizado — força a primeira tentativa assim que houver rede. */
   uint32_t ultimo_ntp_ok_ms = 0;
+  uint16_t quedas_vistas = 0;
 
   for (;;) {
     esp_task_wdt_reset();
 
     wifi_check_reconnect();
     webserver_loop();
+
+    // Queda do Wi-Fi entra no resumo do período sem contato, com o motivo.
+    uint16_t quedas = wifi_reconnect_count();
+    if (quedas != quedas_vistas) {
+      quedas_vistas = quedas;
+      _outage.on_wifi_drop(millis(), wifi_last_disconnect_reason());
+    }
 
     /**
      * NTP: primeira sincronização, ressincronização diária, e imediatamente
@@ -127,6 +145,7 @@ static void _net_loop(void*) {
     if (ack_novo || (int32_t)(agora - proximo_post_ms) >= 0) {
       acks_ja_enviados = geracao_acks;
       ApiResult r = api_client_post();
+      uint32_t depois = millis();
 
       if (r == API_OK && !_ever_connected) {
         _ever_connected = true;
@@ -134,22 +153,38 @@ static void _net_loop(void*) {
                   "Primeiro contato com o servidor estabelecido");
       }
 
+      // O que aconteceu durante um período sem contato — na volta, vira um
+      // evento só, com o resumo (ver `outage_tracker.h`).
+      if (r == API_OK) {
+        char resumo[EVENT_MSG_LEN];
+        if (_outage.on_success(depois, OUTAGE_SUMMARY_MIN_MS, resumo, sizeof(resumo))) {
+          event_log(SEV_WARN, COMP_API, "api.outage_summary", "%s", resumo);
+        }
+      } else if (r == API_NO_WIFI) {
+        _outage.on_no_wifi(depois);
+      } else {
+        _outage.on_failure(depois, api_client_last_http_status(), wifi_rssi(), wifi_rssi_valid());
+      }
+
       /**
        * Recuo progressivo quando o servidor não responde.
        *
        * Sem isso, um servidor fora do ar renderia 20 requisições por minuto
-       * sem propósito, cada uma com timeout de 4 s, consumindo rádio e
-       * bateria do roteador à toa. Com recuo, o aquário simplesmente segue
-       * operando sozinho e volta a falar quando houver com quem.
+       * sem propósito, consumindo rádio e o roteador à toa. Com recuo, o
+       * aquário simplesmente segue operando sozinho e volta a falar quando
+       * houver com quem.
        *
-       * O teto é 30 s: adianta pouco esperar mais, e um teto baixo faz a
-       * telemetria voltar rápido quando o servidor enfim sobe.
+       * Dois tetos, porque são duas situações (2026-10-14). O servidor
+       * respondendo com erro (5xx, 401) não melhora em segundos: 30 s. Já o
+       * pacote perdido no Wi-Fi do aquário melhora na tentativa seguinte, e
+       * esperar 30 s ali era atrasar à toa um comando que estava na fila: 10 s.
        */
       uint32_t intervalo = device_config_snapshot().telemetry_interval_ms;
       uint16_t falhas = api_client_consecutive_failures();
       if (falhas > 0) {
+        uint32_t teto = (r == API_SERVER_ERROR || r == API_UNAUTHORIZED) ? 30000UL : 10000UL;
         uint32_t recuo = intervalo * (falhas < 5 ? falhas : 5);
-        if (recuo > 30000UL) recuo = 30000UL;
+        if (recuo > teto) recuo = teto;
         intervalo = recuo;
       }
 

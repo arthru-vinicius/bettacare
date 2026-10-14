@@ -152,6 +152,85 @@ static String _escape_html(const String &text) {
   return out;
 }
 
+/**
+ * Escolha do ponto de acesso. Roteador e repetidor anunciam o mesmo nome de
+ * rede; a lista mostra cada um pelo BSSID, com canal e sinal, e deixa fixar
+ * um deles — ou voltar ao automático (o de sinal mais forte).
+ */
+static String _build_ap_section() {
+  char atual[WIFI_BSSID_STR_LEN];
+  bool conectado = wifi_current_bssid(atual);
+  char fixo[WIFI_BSSID_STR_LEN];
+  bool tem_fixo = wifi_pinned_bssid(fixo);
+
+  WifiApInfo aps[WIFI_SCAN_MAX];
+  uint32_t idade = UINT32_MAX;
+  uint8_t n = wifi_scan_results(aps, WIFI_SCAN_MAX, &idade);
+
+  String h;
+  h.reserve(2048);
+  h += "<h2>Ponto de acesso</h2>";
+  h += "<p>Roteador e repetidor têm o mesmo nome de rede; quem os distingue é o BSSID. ";
+  h += "Fixado, o aquário entra sempre no escolhido. Se ele sumir por 5 min, usa o mais ";
+  h += "forte até ele voltar.</p>";
+
+  h += "<div class='meta'><b>Agora:</b> ";
+  if (conectado) {
+    h += atual;
+    h += " · canal " + String(wifi_current_channel());
+    h += " · " + String(wifi_rssi()) + " dBm";
+  } else {
+    h += "sem Wi-Fi";
+  }
+  h += "<br><b>Escolha:</b> ";
+  if (tem_fixo) {
+    h += "fixado em ";
+    h += fixo;
+    if (wifi_pin_fallback_active()) h += " (sem resposta — usando o mais forte)";
+  } else {
+    h += "automática (o de sinal mais forte)";
+  }
+  h += "</div>";
+
+  if (wifi_scan_busy()) {
+    h += "<p>Procurando redes… <a href='/wifi-setup'>atualize a página</a> em alguns segundos.</p>";
+  } else if (idade == UINT32_MAX) {
+    h += "<p>Nenhuma busca feita ainda.</p>";
+  } else {
+    h += "<p>Busca de " + String(idade / 1000) + " s atrás.</p>";
+  }
+
+  h += "<form method='POST' action='/wifi-setup/ap'>";
+  h += "<label class='ap'><input type='radio' name='bssid' value='auto'";
+  if (!tem_fixo) h += " checked";
+  h += "> Automático (o de sinal mais forte)</label>";
+
+  uint8_t outras = 0;
+  for (uint8_t i = 0; i < n; i++) {
+    if (!aps[i].same_ssid) {
+      outras++;
+      continue;
+    }
+    h += "<label class='ap'><input type='radio' name='bssid' value='";
+    h += aps[i].bssid;
+    h += "'";
+    if (tem_fixo && strcmp(aps[i].bssid, fixo) == 0) h += " checked";
+    h += "> ";
+    h += aps[i].bssid;
+    h += " · canal " + String(aps[i].channel);
+    h += " · " + String(aps[i].rssi) + " dBm";
+    if (conectado && strcmp(aps[i].bssid, atual) == 0) h += " · <b>conectado agora</b>";
+    h += "</label>";
+  }
+  if (outras > 0) {
+    h += "<p>(+" + String(outras) + " rede(s) com outro nome, fora da lista)</p>";
+  }
+  h += "<button type='submit'>Salvar escolha</button></form>";
+  h += "<p><a href='/wifi-setup?scan=1'>Procurar de novo</a>. Sem Wi-Fi, a reconexão ";
+  h += "pausa por alguns segundos durante a busca.</p>";
+  return h;
+}
+
 static String _build_wifi_setup_page(const String &message, bool isError) {
   String configuredSsid = _escape_html(wifi_configured_ssid());
   String apSsid         = _escape_html(wifi_recovery_ap_ssid());
@@ -168,7 +247,7 @@ static String _build_wifi_setup_page(const String &message, bool isError) {
   }
 
   String html;
-  html.reserve(4096);
+  html.reserve(6144);
   html += "<!doctype html><html lang='pt-br'><head><meta charset='utf-8'>";
   html += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
   html += "<title>Wi-Fi Setup</title>";
@@ -181,6 +260,9 @@ static String _build_wifi_setup_page(const String &message, bool isError) {
   html += ".meta{background:#0b1220;border:1px solid #334155;padding:10px;border-radius:8px;margin:12px 0;}";
   html += ".notice{padding:10px;border-radius:8px;margin:10px 0;font-weight:600;}";
   html += ".notice.ok{background:#14532d;border:1px solid #22c55e;} .notice.err{background:#7f1d1d;border:1px solid #ef4444;}";
+  html += "h2{font-size:1.05rem;margin:18px 0 6px;} a{color:#93c5fd;}";
+  html += "label.ap{display:flex;align-items:center;gap:8px;margin:8px 0;font-family:monospace;font-size:.9rem;}";
+  html += "input[type=radio]{width:auto;margin:0;}";
   html += "</style></head><body><div class='card'>";
   html += "<h1>Configuração de Wi-Fi</h1>";
   html += "<p>Página protegida com o mesmo login/senha do OTA.</p>";
@@ -198,6 +280,8 @@ static String _build_wifi_setup_page(const String &message, bool isError) {
   html += "<br><b>IP AP:</b> ";
   html += _escape_html(apIp);
   html += "</div>";
+  html += _build_ap_section();
+  html += "<h2>Rede e senha</h2>";
   html += "<form method='POST' action='/wifi-setup/save'>";
   html += "<label for='ssid'>Novo SSID</label><input id='ssid' name='ssid' maxlength='32' required>";
   html += "<label for='password'>Nova senha (0 ou 8..63 caracteres)</label>";
@@ -265,6 +349,40 @@ static String _build_json() {
   srv_obj["last_http"]      = api_client_last_http_status();
   srv_obj["pending_events"] = event_log_pending();
 
+  // Em qual ponto de acesso, com que sinal, e por que caiu da última vez —
+  // o que faltou para responder "roteador ou repetidor?" em 2026-10-14.
+  JsonObject wifi_obj = doc["wifi"].to<JsonObject>();
+  wifi_obj["connected"] = wifi_is_connected();
+  if (wifi_rssi_valid()) {
+    wifi_obj["rssi"] = wifi_rssi();
+  } else {
+    wifi_obj["rssi"] = nullptr;
+  }
+  char ap[WIFI_BSSID_STR_LEN];
+  if (wifi_current_bssid(ap)) {
+    wifi_obj["bssid"] = ap;
+  } else {
+    wifi_obj["bssid"] = nullptr;
+  }
+  wifi_obj["channel"]                = wifi_current_channel();
+  wifi_obj["reconnects"]             = wifi_reconnect_count();
+  wifi_obj["last_disconnect_reason"] = wifi_last_disconnect_reason();
+  char fixo[WIFI_BSSID_STR_LEN];
+  if (wifi_pinned_bssid(fixo)) {
+    wifi_obj["pinned_bssid"] = fixo;
+  } else {
+    wifi_obj["pinned_bssid"] = nullptr;
+  }
+  wifi_obj["pin_fallback"] = wifi_pin_fallback_active();
+  wifi_obj["recovery_ap"]  = wifi_recovery_ap_active();
+
+  // Leituras cruas para bancada: girar o potenciômetro e ver o ADC mudar
+  // aqui, sem depender do servidor nem do Wi-Fi até ele.
+  JsonObject diag_obj = doc["diag"].to<JsonObject>();
+  diag_obj["pot_raw_adc"]     = fan_get_pot_raw_adc();
+  diag_obj["tach_pulses_raw"] = fan_get_tach_pulses_raw();
+  diag_obj["free_heap"]       = ESP.getFreeHeap();
+
   doc["fw_version"] = FW_VERSION;
   doc["device_id"]  = DEVICE_ID;
   doc["uptime_ms"]  = millis();
@@ -296,7 +414,37 @@ void webserver_init() {
   // Página de recuperação de Wi-Fi (HTTP Basic com credenciais OTA)
   _server.on("/wifi-setup", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!_require_setup_auth(request)) return;
+    // Busca pedida, ou nenhuma recente: a lista de pontos de acesso precisa
+    // dela. Roda na task de rede; a página mostra "procurando" até terminar.
+    uint32_t idade = UINT32_MAX;
+    WifiApInfo nada[1];
+    wifi_scan_results(nada, 0, &idade);
+    if (request->hasParam("scan") || idade == UINT32_MAX || idade > 5UL * 60UL * 1000UL) {
+      wifi_request_scan();
+    }
     request->send(200, "text/html; charset=utf-8", _build_wifi_setup_page("", false));
+  });
+
+  // Fixa (ou solta) o ponto de acesso. Aplicado pela task de rede no ciclo seguinte.
+  _server.on("/wifi-setup/ap", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (!_require_setup_auth(request)) return;
+
+    const AsyncWebParameter *p = request->hasParam("bssid", true)
+      ? request->getParam("bssid", true)
+      : (request->hasParam("bssid") ? request->getParam("bssid") : nullptr);
+    String escolha = p == nullptr ? String("") : p->value();
+
+    if (!wifi_set_pinned_bssid(escolha)) {
+      request->send(400, "text/html; charset=utf-8",
+                    _build_wifi_setup_page("BSSID invalido.", true));
+      return;
+    }
+    bool automatico = escolha.length() == 0 || escolha.equalsIgnoreCase("auto");
+    request->send(200, "text/html; charset=utf-8",
+                  _build_wifi_setup_page(automatico
+                                             ? "Escolha automatica salva: o de sinal mais forte."
+                                             : "Ponto de acesso fixado. Reconectando nele...",
+                                         false));
   });
 
   // Recebe novas credenciais Wi-Fi e dispara reconexão sem bloquear o sistema.

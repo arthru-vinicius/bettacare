@@ -17,10 +17,11 @@
 enum ApiResult : uint8_t {
   API_OK = 0,
   API_NO_WIFI,
-  API_HTTP_ERROR,     // não houve resposta, ou o código não foi 2xx
+  API_HTTP_ERROR,     // o servidor respondeu com um código que não é 2xx (nem 401/5xx)
   API_UNAUTHORIZED,   // 401 — token divergente
   API_SERVER_ERROR,   // 5xx — o servidor está de pé mas não pôde atender
   API_BAD_RESPONSE,   // 2xx com corpo que não dá para interpretar
+  API_NET_ERROR,      // sem resposta: não conectou, ou a resposta não voltou a tempo
 };
 
 void api_client_init();

@@ -744,6 +744,12 @@ input[type="range"]:disabled::-webkit-slider-thumb {
   color: var(--c-accent);
 }
 
+.cmd-status.queued {
+  background: var(--c-amber-dim);
+  border-color: rgba(245, 166, 35, 0.3);
+  color: var(--c-amber);
+}
+
 .cmd-status.ok {
   background: var(--c-on-dim);
   border-color: rgba(76, 219, 188, 0.24);

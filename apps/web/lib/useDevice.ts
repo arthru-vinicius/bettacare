@@ -52,10 +52,21 @@ export interface CommandFeedback {
    * na tela da ventoinha, onde não faz sentido nenhum.
    */
   target: CommandTarget;
-  status: "pending" | "ok" | "fail";
+  /**
+   * `queued`: o aquário está sem contato e o comando espera na fila do
+   * servidor — não é falha, é o comportamento previsto com o Wi-Fi ruim, e o
+   * desfecho real (executou ou venceu o prazo) ainda vai aparecer.
+   */
+  status: "pending" | "queued" | "ok" | "fail";
   /** Motivo em português, quando falhou. */
   reason?: string;
   hint?: string;
+  /** Desde quando o aquário está sem contato (ISO), quando `queued`. */
+  offlineSince?: string | null;
+  /** Até quando o comando ainda pode ser executado (ISO), quando `queued`. */
+  expiresAt?: string | null;
+  /** Já passou por `queued`: o "confirmado" diz que foi executado com atraso. */
+  wasQueued?: boolean;
 }
 
 /**
@@ -89,6 +100,8 @@ export function useDevice() {
   const watching = useRef<Set<number>>(new Set());
   /** Falhas seguidas do polling — alimenta o recuo progressivo (UPGRADE/06, P6). */
   const pollFailures = useRef(0);
+  /** Último `device.online` visto — decide o ritmo do polling com comando em espera. */
+  const deviceOffline = useRef(false);
   const [diagnosticRunning, setDiagnosticRunning] = useState(false);
   /** Enquanto esperamos um relatório novo: quando pedimos, e qual era o anterior. */
   const diagnosticWaitingSince = useRef<{ since: number; previousRanAt: string | null } | null>(
@@ -113,6 +126,13 @@ export function useDevice() {
       setCommands(cmds);
       setError(null);
       setDeviceMissing(false);
+      // A volta do aquário com um comando em espera retoma o ritmo rápido
+      // na hora, sem esperar o efeito do feedback.
+      const offlineAgora = !overview.device.online;
+      if (offlineAgora !== deviceOffline.current) {
+        deviceOffline.current = offlineAgora;
+        restartPolling.current();
+      }
       // Se vínhamos de um recuo, volta ao ritmo normal imediatamente — não
       // espera a próxima troca de aba para perceber que o servidor voltou.
       if (pollFailures.current > 0) {
@@ -143,7 +163,9 @@ export function useDevice() {
 
   // Resolve o feedback assim que o comando observado chega a um estado final.
   useEffect(() => {
-    if (feedback === null || feedback.status !== "pending") return;
+    if (feedback === null || (feedback.status !== "pending" && feedback.status !== "queued")) {
+      return;
+    }
 
     const cmd = commands.find((c) => c.id === feedback.id);
     if (cmd === undefined) return;
@@ -151,38 +173,57 @@ export function useDevice() {
     if (cmd.status === "acked") {
       watching.current.delete(cmd.id);
       restartPolling.current(); // volta ao ritmo normal se não há mais nada em voo
-      setFeedback({ id: cmd.id, target: feedback.target, status: "ok" });
+      setFeedback({
+        id: cmd.id,
+        target: feedback.target,
+        status: "ok",
+        wasQueued: feedback.status === "queued" || feedback.wasQueued === true,
+      });
       return;
     }
 
-    if (cmd.status === "rejected" || cmd.status === "expired") {
+    if (cmd.status === "rejected" || cmd.status === "expired" || cmd.status === "superseded") {
       watching.current.delete(cmd.id);
       restartPolling.current();
       setFeedback({
         id: cmd.id,
         target: feedback.target,
         status: "fail",
-        ...describeFailure(cmd, data),
+        ...describeFailure(cmd),
       });
       return;
     }
 
     /**
-     * Ainda `queued` com o dispositivo offline (UPGRADE/06, P4; UPGRADE/04,
-     * S4). Um comando nesse estado nunca vira "expired" sozinho — ele está
-     * legitimamente esperando o dispositivo voltar. Sem isto, o spinner
-     * "Enviando ao dispositivo... Ele busca a fila a cada 3 segundos" girava
-     * para sempre, prometendo uma entrega que não ia acontecer.
+     * Pendente com o aquário sem contato (UPGRADE/06, P4; e a fila de 15 min
+     * da v1.3.0). Antes isto virava "fail" e o app parava de acompanhar — mas
+     * o comando continua no servidor, e na volta ele é executado. Agora a tela
+     * diz até quando ele espera e segue observando: o desfecho real
+     * ("executado quando voltou" ou "venceu o prazo") aparece sozinho.
+     *
+     * `sent` entra junto: é o comando que foi numa resposta que se perdeu,
+     * exatamente o caso da queda logo depois do toque.
      */
-    if (cmd.status === "queued" && data !== null && !data.device.online) {
-      watching.current.delete(cmd.id);
+    const offline = data !== null && !data.device.online;
+    if (offline) {
+      if (feedback.status !== "queued" || feedback.expiresAt !== cmd.expires_at) {
+        setFeedback({
+          id: cmd.id,
+          target: feedback.target,
+          status: "queued",
+          offlineSince: data.device.last_seen_at,
+          expiresAt: cmd.expires_at,
+          wasQueued: true,
+        });
+        restartPolling.current(); // sem contato, o ritmo rápido não adianta nada
+      }
+      return;
+    }
+
+    // O contato voltou e o comando ainda não foi confirmado: de novo "enviando".
+    if (feedback.status === "queued") {
+      setFeedback({ ...feedback, status: "pending" });
       restartPolling.current();
-      setFeedback({
-        id: cmd.id,
-        target: feedback.target,
-        status: "fail",
-        ...describeFailure(cmd, data),
-      });
     }
   }, [commands, feedback, data]);
 
@@ -218,7 +259,10 @@ export function useDevice() {
       stop();
       if (document.visibilityState !== "visible") return;
 
-      const emVoo = watching.current.size > 0 || settingsWaiting.current !== null;
+      // Comando esperando um aquário sem contato não precisa de 600 ms: a fila
+      // pode durar 15 min, e o "voltou" aparece no ritmo normal de 2 s.
+      const emVoo =
+        (watching.current.size > 0 && !deviceOffline.current) || settingsWaiting.current !== null;
       const base = emVoo ? POLL_FAST_MS : POLL_MS;
       // Recuo progressivo: um app esquecido aberto com o servidor fora do ar
       // não deve bater a cada poucos segundos indefinidamente (UPGRADE/06, P6).
@@ -414,42 +458,44 @@ export function useDevice() {
 /**
  * Converte o desfecho de um comando em uma frase que explica o que houve.
  *
- * Cada frase vem de um estado distinto, não de heurística: "expirou" com o
- * dispositivo offline é uma causa diferente de "expirou" com ele online, e o
- * usuário precisa distinguir para saber se o problema é a rede ou o aquário.
+ * Cada frase vem de um estado distinto, não de heurística: o `error_code` do
+ * servidor separa "nunca chegou ao aquário" de "chegou e a confirmação não
+ * voltou" e de "o aquário reiniciou no meio", e o usuário precisa distinguir
+ * para saber se repete o comando ou se confere o que aconteceu.
  */
-function describeFailure(
-  cmd: CommandItem,
-  data: OverviewResponse | null,
-): { reason: string; hint?: string } {
+function describeFailure(cmd: CommandItem): { reason: string; hint?: string } {
+  // O catálogo de códigos existe justamente para esta tradução: mostrar
+  // `light.gpio_fault` cru ao usuário não diz nada sobre o que fazer.
+  const info = cmd.error_code ? describeEventCode(cmd.error_code) : undefined;
+
   if (cmd.status === "rejected") {
-    // O catálogo de códigos existe justamente para esta tradução: mostrar
-    // `light.gpio_fault` cru ao usuário não diz nada sobre o que fazer.
-    const info = cmd.error_code ? describeEventCode(cmd.error_code) : undefined;
     return {
       reason: info?.label ?? "O dispositivo recusou o comando",
       hint: info?.hint ?? cmd.error_code ?? undefined,
     };
   }
 
-  if (data !== null && !data.device.online) {
-    const desde = data.device.last_seen_at
-      ? new Date(data.device.last_seen_at).toLocaleTimeString("pt-BR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : null;
+  if (cmd.status === "superseded") {
     return {
-      reason: desde
-        ? `Dispositivo sem contato desde ${desde}`
-        : "Dispositivo offline",
-      hint: "O comando será entregue assim que ele voltar a falar com o servidor.",
+      reason: "Substituído por um comando mais novo",
+      hint: "Outro pedido para o mesmo equipamento chegou depois deste, e vale o mais recente.",
     };
   }
 
+  if (cmd.error_code === "cmd.stale_discarded") {
+    return {
+      reason: "Não foi executado — o aquário ficou sem contato o prazo todo",
+      hint: "Repita o comando se ainda quiser; executar agora uma decisão antiga seria pior.",
+    };
+  }
+
+  if (cmd.error_code === "cmd.interrupted" && info) {
+    return info.hint ? { reason: info.label, hint: info.hint } : { reason: info.label };
+  }
+
   return {
-    reason: "O comando expirou sem confirmação",
-    hint: "O dispositivo recebeu o comando mas nunca confirmou. Pode ter reiniciado no meio.",
+    reason: "Sem confirmação do aquário",
+    hint: "Ele recebeu o comando, mas a confirmação não voltou a tempo — a conexão caiu antes. Pode ter executado: confira o estado na tela.",
   };
 }
 

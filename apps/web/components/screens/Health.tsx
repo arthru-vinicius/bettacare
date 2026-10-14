@@ -452,7 +452,14 @@ function valorDe(h: ComponentHealth): string {
     }
     case "wifi": {
       const r = d["rssi"];
-      return typeof r === "number" ? `${r} dBm` : "—";
+      if (typeof r !== "number") return "—";
+      // Roteador e repetidor têm o mesmo nome de rede: só o BSSID diz em qual
+      // dos dois o aquário está (firmware 2.1.1+).
+      const ap = d["bssid"];
+      const canal = d["channel"];
+      return typeof ap === "string"
+        ? `${r} dBm · ${ap}${typeof canal === "number" ? ` · canal ${canal}` : ""}`
+        : `${r} dBm`;
     }
     case "button": {
       const pressionado = d["pressed"];

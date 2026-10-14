@@ -85,6 +85,13 @@
       "when": 1790972806129,
       "tag": "0011_refeicoes_24h",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791950866756,
+      "tag": "0012_rede_instavel",
+      "breakpoints": true
     }
   ]
 }

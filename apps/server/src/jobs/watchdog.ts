@@ -1,5 +1,6 @@
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, sql } from "drizzle-orm";
 
+import { expireOverdueCommands } from "../commands/lifecycle.js";
 import { commands, devices, events } from "../db/schema.js";
 import { sendToAll } from "../push/notify.js";
 import type { Runtime } from "../runtime.js";
@@ -34,14 +35,23 @@ export function startWatchdog(rt: Runtime): () => void {
   return () => clearInterval(timer);
 }
 
+/** "12 min", "1 h 05 min" — para o texto da notificação. */
+export function duracaoCurta(ms: number): string {
+  const min = Math.max(1, Math.round(ms / 60_000));
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const resto = min % 60;
+  return resto === 0 ? `${h} h` : `${h} h ${String(resto).padStart(2, "0")} min`;
+}
+
 export async function tick(rt: Runtime): Promise<void> {
   if (!rt.isDbReady()) return;
 
   const now = new Date();
   /** Coletado dentro da transação, notificado depois que ela fecha. */
-  const offline: string[] = [];
+  const alertar: { deviceId: string; lastSeenAt: Date | null }[] = [];
   const offlineAt = new Date(now.getTime() - rt.cfg.DEVICE_OFFLINE_AFTER_S * 1000);
-  const expiredAt = new Date(now.getTime() - rt.cfg.COMMAND_TTL_S * 1000);
+  const alertAt = new Date(now.getTime() - rt.cfg.DEVICE_OFFLINE_ALERT_AFTER_S * 1000);
 
   await rt.db.transaction(async (tx) => {
     // ── Dispositivos que ficaram mudos ────────────────────────────────────
@@ -72,30 +82,26 @@ export async function tick(rt: Runtime): Promise<void> {
       `);
 
       rt.log.warn({ device: d.deviceId }, "dispositivo offline");
-      offline.push(d.deviceId);
     }
 
-    // ── Comandos entregues que nunca foram confirmados ────────────────────
-    const expirados = await tx
-      .update(commands)
-      .set({ status: "expired", settledAt: now, errorCode: "cmd.expired" })
-      .where(and(eq(commands.status, "sent"), lt(commands.sentAt, expiredAt)))
-      .returning({ id: commands.id, deviceId: commands.deviceId, action: commands.action });
+    // ── Silêncio longo o bastante para tocar o celular ────────────────────
+    // Uma vez por episódio: `offline_alerted_at` só volta a nulo quando o
+    // dispositivo fala de novo (ver o ingest, que também avisa da volta).
+    const longos = await tx
+      .update(devices)
+      .set({ offlineAlertedAt: now })
+      .where(
+        and(
+          eq(devices.online, false),
+          isNull(devices.offlineAlertedAt),
+          lt(devices.lastSeenAt, alertAt),
+        ),
+      )
+      .returning({ deviceId: devices.deviceId, lastSeenAt: devices.lastSeenAt });
+    alertar.push(...longos);
 
-    for (const cmd of expirados) {
-      await tx.insert(events).values({
-        receivedAt: now,
-        deviceId: cmd.deviceId,
-        source: "server",
-        sev: "error",
-        comp: "api",
-        code: "cmd.expired",
-        msg: `O comando ${cmd.action} foi entregue mas nunca confirmado`,
-        ctx: { command_id: cmd.id, action: cmd.action },
-      });
-
-      rt.log.warn({ command: cmd.id, action: cmd.action }, "comando expirou");
-    }
+    // ── Comandos que passaram do prazo de vida ────────────────────────────
+    await expireOverdueCommands(tx, now, rt.cfg.COMMAND_MAX_AGE_S);
 
     // ── Comandos que o dispositivo nunca chegou a receber ──────────────────
     // Causa diferente de `expired`: aqui o comando não foi entregue nenhuma
@@ -125,11 +131,15 @@ export async function tick(rt: Runtime): Promise<void> {
         .set({ errorCode: "cmd.device_offline" })
         .where(eq(commands.id, cmd.id));
 
+      // `warn`, não `error`: esperar o aquário voltar é o comportamento
+      // previsto da fila, não uma falha — com o Wi-Fi de produção isso
+      // acontece todo dia, e um vermelho para cada caso ensina a ignorar
+      // o vermelho de verdade.
       await tx.insert(events).values({
         receivedAt: now,
         deviceId: cmd.deviceId,
         source: "server",
-        sev: "error",
+        sev: "warn",
         comp: "api",
         code: "cmd.device_offline",
         msg: `${cmd.action} aguardando na fila — dispositivo sem contato`,
@@ -145,10 +155,13 @@ export async function tick(rt: Runtime): Promise<void> {
 
   // Fora da transação: uma entrega a push service externo pode demorar, e não
   // deve segurar conexão do pool nem atrasar o próximo tick do watchdog.
-  for (const _ of offline) {
+  for (const d of alertar) {
+    const silencio = d.lastSeenAt ? duracaoCurta(now.getTime() - d.lastSeenAt.getTime()) : null;
     await sendToAll(rt, {
       title: "Controlador sem contato",
-      body: `O aquário parou de responder há mais de ${rt.cfg.DEVICE_OFFLINE_AFTER_S}s. Verifique a energia e a rede.`,
+      body: silencio
+        ? `O aquário não fala com o servidor há ${silencio}. Ele segue funcionando sozinho; verifique a energia e o Wi-Fi.`
+        : "O aquário parou de falar com o servidor. Ele segue funcionando sozinho; verifique a energia e o Wi-Fi.",
       tag: "device-offline",
       requireInteraction: true,
     }).catch((err) => rt.log.error({ err }, "falha ao notificar dispositivo offline"));

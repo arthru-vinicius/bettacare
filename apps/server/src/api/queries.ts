@@ -10,6 +10,7 @@ import {
 } from "@bettacare/contract";
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
 
+import { commandExpiresAt } from "../commands/lifecycle.js";
 import type { Db } from "../db/client.js";
 import {
   commands,
@@ -22,7 +23,7 @@ import {
 } from "../db/schema.js";
 
 /** Estado completo do aquário — o que a tela inicial e a aba Saúde consomem. */
-export async function getOverview(db: Db, deviceId: string) {
+export async function getOverview(db: Db, deviceId: string, commandMaxAgeS: number) {
   const [device] = await db
     .select()
     .from(devices)
@@ -100,6 +101,8 @@ export async function getOverview(db: Db, deviceId: string) {
             rssi: state.wifiRssi,
             ip: state.wifiIp,
             reconnects: state.wifiReconnects,
+            bssid: state.wifiBssid,
+            channel: state.wifiChannel,
           },
           // Nulo enquanto o dispositivo nunca falou sobre o alimentador —
           // firmware anterior a esta integração. A partir daí o bloco sempre
@@ -152,6 +155,7 @@ export async function getOverview(db: Db, deviceId: string) {
             checks: (state.diagnosticChecks ?? []) as DiagnosticResult["checks"],
           }
         : null,
+    command_max_age_s: commandMaxAgeS,
   };
 }
 
@@ -251,7 +255,12 @@ export async function listEvents(db: Db, f: EventFilter) {
 }
 
 /** Histórico de comandos, com a trilha inteira de cada um. */
-export async function listCommands(db: Db, deviceId: string, limit: number) {
+export async function listCommands(
+  db: Db,
+  deviceId: string,
+  limit: number,
+  commandMaxAgeS: number,
+) {
   const rows = await db
     .select()
     .from(commands)
@@ -270,6 +279,7 @@ export async function listCommands(db: Db, deviceId: string, limit: number) {
     sent_at: c.sentAt?.toISOString() ?? null,
     settled_at: c.settledAt?.toISOString() ?? null,
     error_code: c.errorCode,
+    expires_at: commandExpiresAt(c, commandMaxAgeS)?.toISOString() ?? null,
   }));
 }
 

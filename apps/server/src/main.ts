@@ -1,3 +1,5 @@
+import type { Server as HttpServer } from "node:http";
+
 import { serve } from "@hono/node-server";
 
 import { createApiRouter } from "./api/router.js";
@@ -48,6 +50,21 @@ const ingestServer = serve({
   port: cfg.PORT_INGEST,
   hostname: "0.0.0.0",
 });
+
+/**
+ * Conexão do ESP32 mantida aberta entre POSTs (firmware 2.1.1+).
+ *
+ * Com o Wi-Fi do aquário perdendo pacotes, abrir uma conexão TCP por POST era
+ * a parte mais frágil do caminho: um SYN perdido custa 3 s de retransmissão
+ * no lwIP. O firmware agora reaproveita a conexão — e o padrão do Node, 5 s
+ * ociosa, a fecharia exatamente quando o firmware recua entre tentativas
+ * (até 10 s). 75 s cobre o recuo com folga; `headersTimeout` precisa ser
+ * maior que ele, senão o Node corta a conexão reaproveitada no meio.
+ */
+// `serve()` tipa o retorno como HTTP/1 ou HTTP/2; sem a opção `createServer`,
+// ele é sempre o `http.Server` do Node.
+(ingestServer as HttpServer).keepAliveTimeout = 75_000;
+(ingestServer as HttpServer).headersTimeout = 76_000;
 
 log.info(
   { ui: cfg.PORT_UI, ingest: cfg.PORT_INGEST, env: cfg.NODE_ENV },

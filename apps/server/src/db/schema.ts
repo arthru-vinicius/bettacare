@@ -84,6 +84,13 @@ export const devices = pgTable("devices", {
   lastIp: text("last_ip"),
   /** Espelha `devices.last_seen_at` contra o limite de silêncio. */
   online: boolean("online").notNull().default(false),
+  /**
+   * Quando o push de "sem contato" saiu neste episódio offline; nulo se não
+   * saiu (ainda). É o que impede o watchdog de notificar de novo a cada
+   * 30 s, e o que diz ao ingest que a volta também merece notificação — sem
+   * ela, quem recebeu o alarme não saberia que já passou.
+   */
+  offlineAlertedAt: timestamp("offline_alerted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -131,6 +138,13 @@ export const deviceState = pgTable("device_state", {
   wifiRssi: smallint("wifi_rssi"),
   wifiIp: text("wifi_ip"),
   wifiReconnects: integer("wifi_reconnects").notNull().default(0),
+  /**
+   * Ponto de acesso, canal e motivo da última queda (firmware 2.1.1+). Nulos
+   * com firmware anterior. Ver `wifiStateSchema` no contrato.
+   */
+  wifiBssid: text("wifi_bssid"),
+  wifiChannel: smallint("wifi_channel"),
+  wifiLastDisconnectReason: smallint("wifi_last_disconnect_reason"),
 
   /** `millis()` do dispositivo: estoura `integer` com ~25 dias ligado. */
   uptimeMs: bigint("uptime_ms", { mode: "number" }),

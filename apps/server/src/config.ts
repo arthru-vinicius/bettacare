@@ -1,3 +1,4 @@
+import { DEFAULT_COMMAND_MAX_AGE_S } from "@bettacare/contract";
 import { z } from "zod";
 
 /**
@@ -50,8 +51,33 @@ const envSchema = z.object({
 
   /** Silêncio a partir do qual o dispositivo é dado como offline. */
   DEVICE_OFFLINE_AFTER_S: z.coerce.number().int().min(10).default(60),
-  /** Prazo para o dispositivo confirmar um comando já entregue. */
-  COMMAND_TTL_S: z.coerce.number().int().min(10).default(90),
+  /**
+   * Silêncio a partir do qual o offline vira **notificação no celular**.
+   *
+   * Separado de `DEVICE_OFFLINE_AFTER_S` de propósito: o Wi-Fi do aquário cai
+   * por 2 a 5 minutos várias vezes ao dia (mediana de 2,3 min em produção,
+   * 2026-10), e com o push saindo a cada queda foram 103 notificações em uma
+   * semana — o tipo de alarme que se aprende a ignorar. A aba Saúde e os logs
+   * continuam marcando offline em 60 s; o celular só toca quando o silêncio
+   * já é um problema de verdade.
+   */
+  DEVICE_OFFLINE_ALERT_AFTER_S: z.coerce.number().int().min(60).default(900),
+  /**
+   * Prazo de vida de um comando, contado da criação — ver
+   * `DEFAULT_COMMAND_MAX_AGE_S` no contrato, de onde vem o padrão e o motivo.
+   */
+  COMMAND_MAX_AGE_S: z.coerce
+    .number()
+    .int()
+    .min(60)
+    .max(24 * 60 * 60)
+    .default(DEFAULT_COMMAND_MAX_AGE_S),
+  /**
+   * **Obsoleta desde a v1.3.0**, aceita só para não quebrar o compose que
+   * ainda a declara. Era o prazo de 90 s contado da primeira entrega; o
+   * comando agora vive até `COMMAND_MAX_AGE_S`.
+   */
+  COMMAND_TTL_S: z.coerce.number().int().min(10).optional(),
 
   /**
    * Par VAPID do Web Push. **Opcionais de propósito**: sem eles, o servidor

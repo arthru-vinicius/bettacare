@@ -46,7 +46,7 @@ export function createApiRouter(rt: Runtime): Hono {
 
   api.get("/overview", async (c) => {
     const device = c.req.query("device") ?? DEFAULT_DEVICE;
-    const data = await getOverview(rt.db, device);
+    const data = await getOverview(rt.db, device, rt.cfg.COMMAND_MAX_AGE_S);
     return data === null ? c.json({ error: "device_not_found" }, 404) : c.json(data);
   });
 
@@ -98,7 +98,7 @@ export function createApiRouter(rt: Runtime): Hono {
   api.get("/commands", async (c) => {
     const device = c.req.query("device") ?? DEFAULT_DEVICE;
     const limit = Math.min(Number(c.req.query("limit") ?? 30) || 30, 100);
-    return c.json({ items: await listCommands(rt.db, device, limit) });
+    return c.json({ items: await listCommands(rt.db, device, limit, rt.cfg.COMMAND_MAX_AGE_S) });
   });
 
   api.post("/commands", async (c) => {
@@ -132,7 +132,7 @@ export function createApiRouter(rt: Runtime): Hono {
 
   api.get("/settings", async (c) => {
     const device = c.req.query("device") ?? DEFAULT_DEVICE;
-    const data = await getOverview(rt.db, device);
+    const data = await getOverview(rt.db, device, rt.cfg.COMMAND_MAX_AGE_S);
     return data === null
       ? c.json({ error: "device_not_found" }, 404)
       : c.json({ config: data.config, config_version: data.config_version });

@@ -16,6 +16,7 @@ import {
 } from "@bettacare/contract";
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 
+import { expireOverdueCommands, settleAfterReboot } from "../commands/lifecycle.js";
 import type { AppConfig } from "../config.js";
 import type { PushMessage } from "../push/notify.js";
 import type { Db } from "../db/client.js";
@@ -96,7 +97,11 @@ export async function processTelemetry(
   return db.transaction(async (tx) => {
     // ── 1. O dispositivo existe e acabou de falar ────────────────────────
     const [before] = await tx
-      .select({ online: devices.online })
+      .select({
+        online: devices.online,
+        lastSeenAt: devices.lastSeenAt,
+        offlineAlertedAt: devices.offlineAlertedAt,
+      })
       .from(devices)
       .where(eq(devices.deviceId, body.device_id))
       .limit(1);
@@ -117,17 +122,39 @@ export async function processTelemetry(
           lastIp: body.wifi.ip,
           fwVersion: body.fw_version ?? null,
           online: true,
+          // Fim do episódio: o próximo silêncio longo volta a notificar.
+          offlineAlertedAt: null,
         },
       });
 
     // O watchdog marca offline; quem percebe a volta é o próprio POST.
     if (before !== undefined && !before.online) {
+      const silencio = before.lastSeenAt ? now.getTime() - before.lastSeenAt.getTime() : null;
       await insertServerEvent(tx, body.device_id, now, {
         sev: "info",
         comp: "system",
         code: "device.online",
-        msg: "Dispositivo voltou a se comunicar",
+        msg:
+          silencio === null
+            ? "Dispositivo voltou a se comunicar"
+            : `Dispositivo voltou a se comunicar depois de ${duracao(silencio)} sem contato`,
+        ...(silencio === null ? {} : { ctx: { offline_ms: silencio } }),
       });
+
+      // Quem recebeu o "sem contato" precisa saber que passou — senão o
+      // alarme fica no celular afirmando um problema que já acabou. A mesma
+      // `tag` substitui a notificação anterior em vez de empilhar outra.
+      if (before.offlineAlertedAt !== null) {
+        alerts.push({
+          title: "Controlador voltou",
+          body:
+            silencio === null
+              ? "O aquário voltou a falar com o servidor."
+              : `O aquário voltou a falar com o servidor depois de ${duracao(silencio)} sem contato.`,
+          tag: "device-offline",
+          requireInteraction: false,
+        });
+      }
     }
 
     // Um campo saiu de faixa e foi corrigido no lugar de derrubar o corpo
@@ -169,6 +196,21 @@ export async function processTelemetry(
     // Processadas mesmo num reenvio: marcar um comando como confirmado é
     // idempotente, e perder um ack custaria uma reentrega desnecessária.
     const lightDesiredFromAck = await applyAcks(tx, body, now);
+
+    // ── 2b. Reinício com comando não repetível em voo ────────────────────
+    // O firmware reconhece reentregas pelo `id`, mas só até reiniciar: depois
+    // disso, uma alimentação já executada voltaria a sair. `boot_id` maior é
+    // o caso normal (contador na NVS); `seq` zero cobre o `boot_id` aleatório
+    // de quando a NVS falha — e deixa de fora um POST atrasado do boot
+    // anterior, que traria um `seq` alto.
+    if (
+      previous !== undefined &&
+      previous.lastBootId >= 0 &&
+      body.boot_id !== previous.lastBootId &&
+      (body.boot_id > previous.lastBootId || body.seq === 0)
+    ) {
+      await settleAfterReboot(tx, body.device_id, now);
+    }
 
     // ── 3. Idempotência ──────────────────────────────────────────────────
     // A guarda é o `seq`, não uma constraint única: o particionamento de
@@ -292,7 +334,7 @@ export async function processTelemetry(
     }
 
     // ── 4. Comandos para a resposta ──────────────────────────────────────
-    const pending = await takePendingCommands(tx, body.device_id, now);
+    const pending = await takePendingCommands(tx, body.device_id, now, cfg.COMMAND_MAX_AGE_S);
 
     const response: TelemetryResponse = {
       ok: true,
@@ -612,8 +654,8 @@ async function applyAcks(
      * A confirmação chegou depois de o watchdog marcar `expired` (UPGRADE/04,
      * S8). Não é um reenvio comum: o comando **funcionou**, só a resposta se
      * atrasou. Descartar em silêncio faria a interface continuar mentindo que
-     * o comando falhou, quando na verdade `COMMAND_TTL_S` é que está curto
-     * demais para as condições reais de rede.
+     * o comando falhou, quando na verdade `COMMAND_MAX_AGE_S` é que está
+     * curto demais para as condições reais de rede.
      */
     if (cmd.status === "expired") {
       await insertServerEvent(tx, body.device_id, now, {
@@ -1013,6 +1055,11 @@ async function upsertState(
     wifiRssi: body.wifi.rssi,
     wifiIp: body.wifi.ip,
     wifiReconnects: body.wifi.reconnects,
+    // Ausentes com firmware anterior à 2.1.1: nulo é "não informado", não
+    // "sem ponto de acesso".
+    wifiBssid: body.wifi.bssid ?? null,
+    wifiChannel: body.wifi.channel ?? null,
+    wifiLastDisconnectReason: body.wifi.last_disconnect_reason ?? null,
     uptimeMs: body.uptime_ms,
     configVersion: body.config_version,
     lastBootId: body.boot_id,
@@ -1089,26 +1136,29 @@ async function loadConfig(
 }
 
 /**
- * Teto de idade para entrega (UPGRADE/04, S4). Um dispositivo que volta de
- * meia hora offline não deve executar uma fila de decisões já obsoletas — a
- * regra de `superseded` protege comandos do **mesmo alvo**, mas não protege
- * alvos diferentes: um `device.reboot` de ontem ainda dispararia sem isto.
- */
-const MAX_QUEUED_AGE_MS = 15 * 60 * 1000;
-
-/**
  * Devolve os comandos pendentes e marca os novos como entregues.
  *
  * Um comando **não sai da fila ao ser entregue** — só quando o dispositivo o
  * confirma no `ack`. Se a resposta se perder, ele é reentregue no POST
- * seguinte, que é exatamente o que o contrato exige.
+ * seguinte, que é exatamente o que o contrato exige — e continua sendo até o
+ * fim do prazo de vida (`COMMAND_MAX_AGE_S`), não só por 90 s como era.
+ *
+ * O prazo também é o teto de idade para entrega (UPGRADE/04, S4): um
+ * dispositivo que volta de horas offline não executa uma fila de decisões já
+ * obsoletas. A regra de `superseded` protege comandos do **mesmo alvo**; esta
+ * protege alvos diferentes — um `device.reboot` de ontem não dispara hoje.
  */
 async function takePendingCommands(
   tx: Tx,
   deviceId: string,
   now: Date,
+  maxAgeS: number,
 ): Promise<PendingCommand[]> {
-  const rows = await tx
+  // O watchdog faz o mesmo a cada 30 s; aqui garante que nenhum comando
+  // vencido no intervalo entre dois ticks saia nesta resposta.
+  await expireOverdueCommands(tx, now, maxAgeS, deviceId);
+
+  const deliverable = await tx
     .select()
     .from(commands)
     .where(
@@ -1119,26 +1169,6 @@ async function takePendingCommands(
     )
     .orderBy(asc(commands.createdAt))
     .limit(MAX_COMMANDS_PER_RESPONSE);
-
-  const stale = rows.filter((r) => now.getTime() - r.createdAt.getTime() > MAX_QUEUED_AGE_MS);
-  const deliverable = rows.filter((r) => !stale.includes(r));
-
-  if (stale.length > 0) {
-    await tx
-      .update(commands)
-      .set({ status: "expired", settledAt: now, errorCode: "cmd.stale_discarded" })
-      .where(inArray(commands.id, stale.map((r) => r.id)));
-
-    for (const cmd of stale) {
-      await insertServerEvent(tx, deviceId, now, {
-        sev: "warn",
-        comp: "api",
-        code: "cmd.stale_discarded",
-        msg: `${cmd.action} descartado sem executar — mais de ${Math.round(MAX_QUEUED_AGE_MS / 60000)} min na fila`,
-        ctx: { command_id: cmd.id, action: cmd.action },
-      });
-    }
-  }
 
   const novos = deliverable.filter((r) => r.status === "queued").map((r) => r.id);
   if (novos.length > 0) {

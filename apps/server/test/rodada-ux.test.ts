@@ -118,7 +118,7 @@ describe("rodada de UX e estabilidade (UPGRADE/07)", { skip: url ? false : "DATA
   it("o overview diz qual versão da configuração o aquário já aplicou", async () => {
     const [cfg] = await rt.db.select().from(settings).where(eq(settings.deviceId, DEVICE));
     await post(2, em(1), { config_version: cfg!.configVersion });
-    const o = await getOverview(rt.db, DEVICE);
+    const o = await getOverview(rt.db, DEVICE, 900);
     assert.equal(o?.state?.config_version, cfg!.configVersion);
     assert.equal(o?.config_version, cfg!.configVersion);
   });

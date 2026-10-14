@@ -17,6 +17,17 @@ const TEMP_STALE_MS = 30_000;
 /** Abaixo disto o Wi-Fi ainda conecta, mas cai com frequência. */
 const WIFI_WEAK_RSSI = -80;
 /**
+ * Histerese da volta: um Wi-Fi já marcado como fraco só volta a "normal"
+ * acima disto. E para ser marcado, o sinal precisa ficar abaixo de
+ * `WIFI_WEAK_RSSI` por `WIFI_WEAK_PERSIST_MS` seguidos.
+ *
+ * Sem as duas coisas, o RSSI do aquário — que salta de -84 para -55 e volta
+ * em segundos (produção, 2026-10) — virava 2.122 eventos "instável"/"normal"
+ * em três dias, afogando na aba Registros o que de fato importava.
+ */
+const WIFI_RECOVER_RSSI = -75;
+const WIFI_WEAK_PERSIST_MS = 60_000;
+/**
  * Por quanto tempo uma anomalia precisa persistir para virar `fault`.
  *
  * Medido em **tempo**, não em POSTs seguidos (UPGRADE/07). A versão anterior
@@ -96,7 +107,7 @@ export function evaluateHealth(
     evaluateRtc(t),
     evaluateFan(t, ctx),
     evaluateLight(t, ctx),
-    evaluateWifi(t),
+    evaluateWifi(t, ctx),
     evaluateApi(t),
     evaluateButton(t, ctx),
     evaluatePot(t),
@@ -203,19 +214,36 @@ function evaluateLight(t: TelemetryRequest, ctx: HealthContext): HealthVerdict {
   return { comp: "light", status: "ok", code: null, detail };
 }
 
-function evaluateWifi(t: TelemetryRequest): HealthVerdict {
-  const detail = { rssi: t.wifi.rssi, ip: t.wifi.ip, reconnects: t.wifi.reconnects };
+function evaluateWifi(t: TelemetryRequest, ctx: HealthContext): HealthVerdict {
+  const base = {
+    rssi: t.wifi.rssi,
+    ip: t.wifi.ip,
+    reconnects: t.wifi.reconnects,
+    bssid: t.wifi.bssid ?? null,
+    channel: t.wifi.channel ?? null,
+  };
 
   // `null` é "sem leitura no instante do snapshot" (UPGRADE/03, F13), não
   // "sinal ruim" — tratar como degraded aqui inflaria falsos alarmes a partir
   // de uma janela de poucos milissegundos sem associação.
   if (t.wifi.rssi === null) {
-    return { comp: "wifi", status: "unknown", code: null, detail };
+    return { comp: "wifi", status: "unknown", code: null, detail: base };
   }
-  if (t.wifi.rssi < WIFI_WEAK_RSSI) {
-    return { comp: "wifi", status: "degraded", code: "wifi.weak_signal", detail };
+
+  const eraFraco = ctx.previousDetail.wifi?.["weak"] === true;
+  const abaixo = t.wifi.rssi < (eraFraco ? WIFI_RECOVER_RSSI : WIFI_WEAK_RSSI);
+  const anomaly = anomalyOf(ctx, "wifi", abaixo);
+  const detail = { ...base, anomaly_since: anomaly.since };
+
+  if (abaixo && (eraFraco || anomaly.ms >= WIFI_WEAK_PERSIST_MS)) {
+    return {
+      comp: "wifi",
+      status: "degraded",
+      code: "wifi.weak_signal",
+      detail: { ...detail, weak: true },
+    };
   }
-  return { comp: "wifi", status: "ok", code: null, detail };
+  return { comp: "wifi", status: "ok", code: null, detail: { ...detail, weak: false } };
 }
 
 /**

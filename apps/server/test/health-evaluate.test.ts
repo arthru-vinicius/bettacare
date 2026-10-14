@@ -18,7 +18,7 @@ const CTX_VAZIO: HealthContext = { previousDetail: {}, lightDesired: null, now: 
  * de cada avaliação na seguinte — como o ingest faz com o que gravou no banco.
  */
 function sequencia(
-  comp: "fan" | "light" | "button",
+  comp: "fan" | "light" | "button" | "wifi",
   bodies: TelemetryRequest[],
   passoMs: number,
   lightDesired: boolean | null = null,
@@ -54,6 +54,47 @@ function corpo(over: Record<string, unknown> = {}): TelemetryRequest {
     ...over,
   });
 }
+
+describe("saúde: Wi-Fi com histerese (sinal oscilando, produção 2026-10)", () => {
+  const sinal = (rssi: number, extra: Record<string, unknown> = {}) =>
+    corpo({ wifi: { rssi, ip: "192.168.100.46", reconnects: 0, ...extra } });
+
+  it("abaixo de -80 só vira instável depois de 60 s seguidos", () => {
+    assert.equal(sequencia("wifi", [sinal(-84)], 1000)?.status, "ok");
+    assert.equal(sequencia("wifi", Array(31).fill(sinal(-84)), 1000)?.status, "ok");
+    const ultimo = sequencia("wifi", Array(62).fill(sinal(-84)), 1000);
+    assert.equal(ultimo?.status, "degraded");
+    assert.equal(ultimo?.code, "wifi.weak_signal");
+  });
+
+  it("o padrão de produção — -84 e -55 se alternando — não gera transição nenhuma", () => {
+    // Era um evento "instável"/"normal" a cada troca: 2.122 em três dias.
+    let ctx: HealthContext = CTX_VAZIO;
+    const vistos = new Set<string>();
+    for (let i = 0; i < 600; i++) {
+      ctx = { ...ctx, now: new Date(T0.getTime() + i * 1000) };
+      const v = evaluateHealth(sinal(i % 3 === 0 ? -55 : -84), ctx).find((x) => x.comp === "wifi");
+      vistos.add(v?.status ?? "?");
+      ctx = { ...ctx, previousDetail: { wifi: v?.detail ?? null } };
+    }
+    assert.deepEqual([...vistos], ["ok"]);
+  });
+
+  it("depois de instável, só volta a normal acima de -75", () => {
+    const fraco = Array(62).fill(sinal(-84));
+    assert.equal(sequencia("wifi", [...fraco, sinal(-78), sinal(-76)], 1000)?.status, "degraded");
+    assert.equal(sequencia("wifi", [...fraco, sinal(-78), sinal(-70)], 1000)?.status, "ok");
+  });
+
+  it("BSSID e canal vão no detalhe quando o firmware informa", () => {
+    const v = evaluateHealth(
+      sinal(-61, { bssid: "aa:bb:cc:dd:ee:01", channel: 6 }),
+      CTX_VAZIO,
+    ).find((x) => x.comp === "wifi");
+    assert.equal(v?.detail?.["bssid"], "aa:bb:cc:dd:ee:01");
+    assert.equal(v?.detail?.["channel"], 6);
+  });
+});
 
 describe("saúde: button e pot (UPGRADE/04, S2)", () => {
   it("sem diag, button e pot não aparecem — nunca 'unknown' fingido", () => {

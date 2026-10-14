@@ -91,6 +91,7 @@ export const COMMAND_ACTION_NAMES = [
   "feeder.feed_now",
   "feeder.set_config",
 ] as const;
+export type CommandActionName = (typeof COMMAND_ACTION_NAMES)[number];
 
 /**
  * O alvo do comando. Dois comandos com o mesmo alvo se anulam: enfileirar um
@@ -153,9 +154,15 @@ export type CommandAck = z.infer<typeof commandAckSchema>;
  * queued ──► sent ──► acked
  *    │        │
  *    │        ├────► rejected
- *    │        └────► expired
+ *    │        └────► expired     (prazo esgotado sem ack, ou reinício no meio)
+ *    ├─────────────► expired     (nunca entregue dentro do prazo)
  *    └─────────────► superseded
  * ```
+ *
+ * `sent` não é "o dispositivo recebeu": é "foi numa resposta de POST". Com o
+ * Wi-Fi ruim do aquário, a resposta se perde com frequência. Por isso o
+ * comando continua sendo reentregue a cada POST até o `ack`, dentro do mesmo
+ * prazo de vida de quando estava na fila (`DEFAULT_COMMAND_MAX_AGE_S`).
  */
 export const commandStatusSchema = z.enum([
   "queued",
@@ -195,7 +202,30 @@ export const storedCommandSchema = z.object({
 export type StoredCommand = z.infer<typeof storedCommandSchema>;
 
 /**
- * Prazo para o dispositivo confirmar um comando já entregue. Passou disso,
- * o watchdog marca `expired`. Generoso de propósito: são 30 ciclos de POST.
+ * Prazo de vida de um comando, contado da criação: até ele, o comando espera
+ * na fila e é (re)entregue a cada POST; passado dele, o watchdog o encerra
+ * como `expired`.
+ *
+ * 15 min saíram do histórico de produção (2026-10-07 a 2026-10-14, Wi-Fi do
+ * aquário): das 103 quedas, 87% duraram menos que isso (mediana de 2,3 min,
+ * p90 de 13 min). Esticar para 30 min só cobria mais 3%; o resto são apagões
+ * de horas, e executar "acender a luz" horas depois do pedido seria pior que
+ * não executar. Era 90 s contados da primeira entrega: uma resposta perdida
+ * logo antes de uma queda bastava para o comando morrer, já executado ou não.
  */
-export const DEFAULT_COMMAND_TTL_S = 90;
+export const DEFAULT_COMMAND_MAX_AGE_S = 900;
+
+/**
+ * Ações que **não** podem ser repetidas só porque a confirmação se perdeu:
+ * uma segunda alimentação é ração a mais na água, e um segundo reinício é
+ * mais um apagão da luminária.
+ *
+ * O firmware desde a 2.1.1 reconhece a reentrega pelo `id` e confirma sem
+ * executar de novo. O que ele não tem como lembrar é o que aconteceu antes de
+ * um reinício — então, quando o `boot_id` muda com uma dessas ainda `sent`, o
+ * servidor a encerra em vez de reentregar (ver `ingest/process.ts`).
+ */
+export const NON_REPEATABLE_ACTIONS: ReadonlySet<CommandActionName> = new Set<CommandActionName>([
+  "feeder.feed_now",
+  "device.reboot",
+]);

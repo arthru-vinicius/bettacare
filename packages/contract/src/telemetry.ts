@@ -104,6 +104,24 @@ export const wifiStateSchema = z.object({
   ip: z.ipv4().nullable(),
   /** Reconexões desde o boot. Subindo depressa = link instável. */
   reconnects: z.int().min(0).max(INT32_MAX).default(0),
+  /**
+   * O ponto de acesso em que o dispositivo está (firmware 2.1.1+). Roteador
+   * e repetidor anunciam o mesmo nome de rede; só o BSSID diz qual deles o
+   * ESP32 escolheu — e foi justamente essa a dúvida que não tinha resposta
+   * quando o Wi-Fi do aquário começou a cair (2026-10-14).
+   */
+  bssid: z
+    .string()
+    .regex(/^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/, "BSSID no formato aa:bb:cc:dd:ee:ff")
+    .nullable()
+    .optional(),
+  channel: z.int().min(1).max(14).nullable().optional(),
+  /**
+   * Motivo da última desconexão (`wifi_err_reason_t` do ESP-IDF): 200 é
+   * beacon perdido, 201 é AP não encontrado, 15 é handshake que não fechou.
+   * Nulo enquanto não houve nenhuma desde o boot.
+   */
+  last_disconnect_reason: z.int().min(0).max(255).nullable().optional(),
 });
 export type WifiState = z.infer<typeof wifiStateSchema>;
 
@@ -326,7 +344,7 @@ const CORE_PATHS = new Set(["device_id", "boot_id", "seq"]);
  * Campos onde um formato inválido tem um `null` honesto como substituto —
  * o valor deixa de ser "impossível" e passa a ser "não informado".
  */
-const NULLABLE_FALLBACK_PATHS = new Set(["wifi.ip", "rtc.time", "device_time"]);
+const NULLABLE_FALLBACK_PATHS = new Set(["wifi.ip", "wifi.bssid", "rtc.time", "device_time"]);
 
 /**
  * Um valor fora de faixa não pode derrubar o corpo inteiro — é exatamente o

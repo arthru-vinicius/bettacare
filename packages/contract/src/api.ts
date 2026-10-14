@@ -72,6 +72,13 @@ export const overviewResponseSchema = z.object({
         rssi: z.number().nullable(),
         ip: z.string().nullable(),
         reconnects: z.number(),
+        /**
+         * Em qual ponto de acesso o aquário está — roteador ou repetidor
+         * têm o mesmo nome de rede, e só o BSSID os distingue. Nulo com
+         * firmware anterior à 2.1.1, que não o informa.
+         */
+        bssid: z.string().nullable(),
+        channel: z.number().nullable(),
       }),
       /**
        * Nulo até o primeiro POST que já mencione o alimentador. Diferente de
@@ -115,6 +122,11 @@ export const overviewResponseSchema = z.object({
   config_version: z.int(),
   /** Último autodiagnóstico executado. Nulo se nunca rodou. */
   diagnostic: diagnosticResultSchema.nullable(),
+  /**
+   * Por quanto tempo um comando espera o aquário (`COMMAND_MAX_AGE_S`). A
+   * interface usa para dizer "fica na fila até as 14:17" sem adivinhar.
+   */
+  command_max_age_s: z.int(),
 });
 export type OverviewResponse = z.infer<typeof overviewResponseSchema>;
 
@@ -150,6 +162,11 @@ export const commandItemSchema = z.object({
   sent_at: isoInstantSchema.nullable(),
   settled_at: isoInstantSchema.nullable(),
   error_code: z.string().nullable(),
+  /**
+   * Até quando o comando ainda pode ser executado, se continuar sem
+   * confirmação. Nulo depois de encerrado (`acked`, `rejected`...).
+   */
+  expires_at: isoInstantSchema.nullable(),
 });
 export type CommandItem = z.infer<typeof commandItemSchema>;
 

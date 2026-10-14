@@ -141,12 +141,35 @@ export const EVENT_CODES = {
     comp: "wifi",
     sev: "warn",
     label: "Wi-Fi caiu",
+    hint: "O motivo vem na mensagem: BEACON_TIMEOUT é sinal que sumiu por alguns segundos; NO_AP_FOUND é o ponto de acesso fora de alcance; HANDSHAKE_TIMEOUT é sinal fraco demais para completar a conexão.",
   },
   "wifi.weak_signal": {
     comp: "wifi",
     sev: "warn",
     label: "Sinal de Wi-Fi fraco",
-    hint: "RSSI abaixo de -80 dBm. Aproxime o roteador ou o dispositivo.",
+    hint: "RSSI abaixo de -80 dBm por mais de um minuto. Aproxime o roteador ou o dispositivo, ou fixe o ponto de acesso mais próximo em /wifi-setup.",
+  },
+  "wifi.radio_restart": {
+    comp: "wifi",
+    sev: "warn",
+    label: "Rádio Wi-Fi reiniciado",
+    hint: "Muitos minutos tentando reconectar sem sucesso: o firmware desliga e religa o Wi-Fi para sair de um estado preso. O controle do aquário não é afetado.",
+  },
+  "wifi.ap_pinned": {
+    comp: "wifi",
+    sev: "info",
+    label: "Ponto de acesso fixado",
+  },
+  "wifi.ap_unpinned": {
+    comp: "wifi",
+    sev: "info",
+    label: "Escolha automática do ponto de acesso",
+  },
+  "wifi.pinned_ap_missing": {
+    comp: "wifi",
+    sev: "warn",
+    label: "Ponto de acesso fixado não respondeu",
+    hint: "O aquário se conectou ao ponto de acesso mais forte disponível para não ficar sem rede, e volta ao fixado quando ele reaparecer. Se o roteador foi trocado, ajuste em /wifi-setup.",
   },
   "wifi.ap_mode": {
     comp: "wifi",
@@ -165,6 +188,12 @@ export const EVENT_CODES = {
     comp: "api",
     sev: "warn",
     label: "Falha ao enviar telemetria",
+  },
+  "api.outage_summary": {
+    comp: "api",
+    sev: "warn",
+    label: "Resumo de um período sem contato",
+    hint: "Enviado na volta: quanto tempo durou, quantas tentativas, se o Wi-Fi chegou a cair e com que sinal. É o que distingue rede ruim de servidor fora do ar.",
   },
   "api.unauthorized": {
     comp: "api",
@@ -227,7 +256,7 @@ export const EVENT_CODES = {
     comp: "api",
     sev: "warn",
     label: "Confirmação chegou depois do prazo",
-    hint: "O dispositivo executou o comando, mas o ack chegou depois de expirado. O COMMAND_TTL_S pode estar curto para a rede atual.",
+    hint: "O dispositivo executou o comando, mas o ack chegou depois de expirado. O COMMAND_MAX_AGE_S pode estar curto para a rede atual.",
   },
 
   // ── relógio ────────────────────────────────────────────────────────────
@@ -519,19 +548,25 @@ export const EVENT_CODES = {
     comp: "api",
     sev: "error",
     label: "Comando expirou sem confirmação",
-    hint: "O dispositivo recebeu o comando mas nunca confirmou. Pode ter reiniciado no meio.",
+    hint: "Foi reenviado ao aquário durante todo o prazo, mas a confirmação nunca chegou — a conexão caiu antes. Ele pode ter sido executado; confira o estado na tela.",
   },
   "cmd.device_offline": {
     comp: "api",
-    sev: "error",
+    sev: "warn",
     label: "Dispositivo offline — comando na fila",
-    hint: "O comando será entregue assim que o ESP32 voltar a falar com o servidor.",
+    hint: "O comando será entregue assim que o ESP32 voltar a falar com o servidor, dentro do prazo de vida da fila.",
   },
   "cmd.stale_discarded": {
     comp: "api",
     sev: "warn",
-    label: "Comando descartado por idade",
-    hint: "Ficou tempo demais na fila sem o dispositivo aparecer — executar agora seria uma decisão já obsoleta.",
+    label: "Comando descartado sem executar",
+    hint: "O aquário ficou sem contato por todo o prazo da fila. Executar agora seria uma decisão já obsoleta — repita o comando se ainda quiser.",
+  },
+  "cmd.interrupted": {
+    comp: "api",
+    sev: "warn",
+    label: "Comando interrompido por reinício",
+    hint: "O controlador reiniciou depois de receber o comando e antes de confirmá-lo. Uma alimentação não é repetida sozinha, para não dobrar a ração: confira no alimentador se ela saiu.",
   },
 
   // ── servidor ───────────────────────────────────────────────────────────
@@ -539,6 +574,7 @@ export const EVENT_CODES = {
     comp: "system",
     sev: "error",
     label: "Dispositivo parou de responder",
+    hint: "O aquário segue funcionando sozinho. A notificação no celular só sai se o silêncio passar de DEVICE_OFFLINE_ALERT_AFTER_S (15 min por padrão) — quedas curtas de Wi-Fi não acordam ninguém.",
   },
   "device.online": {
     comp: "system",

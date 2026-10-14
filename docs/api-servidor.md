@@ -22,6 +22,10 @@ Autenticação: header `X-Api-Token`, comparado em tempo constante. Os dois lado
 passam por SHA-256 antes da comparação, então o **comprimento** do token
 recebido também não vaza pelo tempo de resposta.
 
+A conexão fica aberta entre POSTs (keep-alive de 75 s, `main.ts`): o firmware
+2.1.1 a reaproveita, e num Wi-Fi que perde pacote abrir uma conexão TCP por
+POST era a parte mais frágil do caminho.
+
 ### Respostas de erro
 
 | Código | Corpo | Quando |
@@ -108,6 +112,15 @@ Comandos do mesmo alvo se anulam — enfileirar um novo marca os anteriores como
 `superseded`. Sem isso, um dispositivo voltando de meia hora offline executaria
 em sequência uma fila de decisões já obsoletas.
 
+Um comando vive `COMMAND_MAX_AGE_S` (15 min) a partir da criação: até lá ele é
+(re)entregue a cada POST, mesmo depois de `sent`, até o `ack` chegar. O
+`GET /api/commands` traz `expires_at` — até quando ele ainda pode ser
+executado — para a interface dizer "na fila até 14:17". Vencido, vira
+`expired` com `cmd.stale_discarded` (nunca entregue) ou `cmd.expired`
+(entregue sem confirmação). Quando o dispositivo reinicia com
+`feeder.feed_now` ou `device.reboot` ainda `sent`, eles não são reentregues: o
+reboot é confirmado e a alimentação encerrada como `cmd.interrupted`.
+
 ### `PUT /api/settings`
 
 Corpo é a configuração **inteira** (`deviceConfigSchema`): as regras cruzam
@@ -156,7 +169,7 @@ sistema.
 
 | Job | Frequência | O que faz |
 |---|---|---|
-| Watchdog | 30 s | marca dispositivo offline, expira comandos sem `ack` |
+| Watchdog | 30 s | marca dispositivo offline (60 s de silêncio), notifica o celular só depois de `DEVICE_OFFLINE_ALERT_AFTER_S` (15 min), encerra comandos que passaram do prazo de vida |
 | Rollup | a cada hora cheia | agrega a hora que acabou de fechar em `telemetry_hourly` |
 | Manutenção | 1×/dia, 03:15 UTC | partições, rollup pendente, purga por tamanho |
 

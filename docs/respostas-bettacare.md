@@ -352,7 +352,9 @@ operando sozinho sem rede, com a última configuração conhecida.
 | `PG_POOL_MAX` | não | não | `4` |
 | `DB_SIZE_LIMIT_BYTES` | não | não | `1073741824` (1 GiB) |
 | `DEVICE_OFFLINE_AFTER_S` | não | não | `60` |
-| `COMMAND_TTL_S` | não | não | `90` |
+| `DEVICE_OFFLINE_ALERT_AFTER_S` | não | não | `900` (push de "sem contato" só depois de 15 min) |
+| `COMMAND_MAX_AGE_S` | não | não | `900` (prazo de vida de um comando) |
+| `COMMAND_TTL_S` | — | — | **obsoleta desde a v1.3.0**: aceita e ignorada |
 | `WEB_ROOT` | não | não | `/app/web` (já definido no `Dockerfile`) |
 | `ALLOWED_USER_EMAILS` | não | não | vazio (aceita qualquer e-mail que o Access autenticar) |
 

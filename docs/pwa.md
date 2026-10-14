@@ -115,14 +115,24 @@ O botão não volta ao normal sozinho. Ele passa por *enviando → confirmado*, 
 | Estado | O que o usuário lê |
 |---|---|
 | `pending` | "Enviando ao aquário… Ele busca os comandos a cada 1 segundo." (o intervalo configurado) |
-| `acked` | "Confirmado pelo aquário" |
+| na fila (aquário offline) | "Na fila — o aquário está sem contato desde 14:02" + "fica guardado até 14:17 e é executado assim que ele voltar" (âmbar, não vermelho) |
+| `acked` | "Confirmado pelo aquário", ou "Executado pelo aquário quando ele voltou" se passou pela fila |
 | `rejected` | o rótulo do catálogo, ex.: "Falha ao acionar a luminária" + a dica |
-| `expired`, offline | "Dispositivo sem contato desde 14:02" + o que esperar |
-| `expired`, online | "O comando expirou sem confirmação" + a causa provável |
+| `expired`, `cmd.stale_discarded` | "Não foi executado — o aquário ficou sem contato o prazo todo" |
+| `expired`, `cmd.expired` | "Sem confirmação do aquário" — pode ter executado; conferir o estado |
+| `expired`, `cmd.interrupted` | o rótulo do catálogo: o controlador reiniciou no meio (alimentação não é repetida) |
 
-Cada frase vem de um estado distinto, não de heurística: "expirou" com o
-dispositivo offline é uma causa diferente de "expirou" com ele online, e o
-usuário precisa distinguir para saber se o problema é a rede ou o aquário.
+Cada frase vem de um estado distinto, não de heurística: o `error_code` do
+servidor separa "nunca chegou" de "chegou e a confirmação não voltou" e de
+"reiniciou no meio", e o usuário precisa distinguir para saber se repete o
+comando ou se confere o que aconteceu.
+
+**Na fila não é falha** (v1.3.0). Com o Wi-Fi do aquário caindo por alguns
+minutos várias vezes ao dia, o comando fica no servidor por 15 min e sai na
+volta. Até a v1.2.0 isso aparecia em vermelho e o app parava de acompanhar —
+o aquário executava depois e a tela nunca sabia. Agora o app segue observando
+(no ritmo normal de 2 s, não no rápido: sem contato, pressa não adianta) e
+mostra o desfecho real.
 
 O feedback é **associado ao alvo do comando**. Sem isso ele é global e vaza —
 uma falha da luminária apareceria também na tela da ventoinha.

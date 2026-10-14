@@ -153,9 +153,58 @@ falhando (aí vale o recuo abaixo).
 
 ### Recuo progressivo
 
-Com o servidor fora do ar, o intervalo cresce até 30 s. Sem isso seriam 20
-requisições por minuto sem propósito, cada uma com timeout de 4 s. O aquário
-segue operando sozinho e volta a falar quando houver com quem.
+Com o servidor respondendo erro (5xx, 401), o intervalo cresce até 30 s. Sem
+isso seriam requisições a cada segundo sem propósito. Já a falha de rede (sem
+resposta) recua no máximo até 10 s: no Wi-Fi do aquário ela passa na tentativa
+seguinte, e esperar 30 s só atrasava um comando que estava na fila (2.1.1). O
+aquário segue operando sozinho e volta a falar quando houver com quem.
+
+### Wi-Fi ruim (2.1.1)
+
+Instalado no aquário, a 4–5 m do roteador e com uma parede no caminho, o ESP32
+passou a ver −63 a −69 dBm de média — com saltos de −84 a −55 em segundos — e
+perdeu o contato 103 vezes numa semana (mediana de 2,3 min; o pior, 5,8 h).
+O banco mostrou que nos apagões longos o Wi-Fi tinha caído de fato
+(`wifi_reconnects` +1 em cada um) e levado horas para voltar. A 2.1.1 ataca
+cada elo disso:
+
+- **Rádio** (`wifi_manager.cpp`, `_tune_radio`). Sem economia de energia (o
+  rádio não dorme entre beacons); 20 s sem beacon antes de desassociar, em vez
+  dos 6 s do ESP-IDF; 20 MHz de banda; e varredura de **todos** os canais,
+  escolhendo o ponto de acesso de sinal mais forte. Antes ele entrava no
+  primeiro com o nome certo — roteador ou repetidor, o que viesse antes.
+- **Ponto de acesso fixado.** Em `/wifi-setup` (login do OTA, pela rede local
+  ou pelo AP de recuperação) aparece a lista de pontos de acesso com o nome da
+  rede — BSSID, canal e sinal — e dá para fixar um. Fixado e sem conectar por
+  5 min, o ESP32 usa o mais forte para não ficar sem rede e procura o fixado de
+  novo a cada 30 min. A escolha fica na NVS.
+- **Preso sem Wi-Fi** por 10 min, o rádio é desligado e religado
+  (`wifi.radio_restart`), de novo a cada 10 min. Não reinicia o ESP32: luz,
+  ventoinha e comando manual seguem como estão.
+- **HTTP.** A conexão com o servidor fica aberta entre POSTs (keep-alive; o
+  servidor segura 75 s). Abrir uma por POST custava sete pacotes, e um SYN
+  perdido, 3 s. Prazos de 7 s para conectar e 8 s para a resposta (eram 4 s
+  para tudo). Uma conexão reaproveitada que o servidor fechou (deploy) é
+  refeita na hora, sem contar como falha.
+- **Reentrega sem repetir** (`command_dedupe.*`). O servidor reentrega um
+  comando a cada POST até o `ack`, por até 15 min. O firmware lembra os 16
+  últimos `id`s: um que ainda está na fila é ignorado; um já executado é
+  confirmado de novo, sem executar — uma alimentação nunca sai duas vezes por
+  causa de uma resposta perdida. Num reinício essa memória se perde, e quem
+  cuida é o servidor (`cmd.interrupted`, ver `docs/arquitetura-observabilidade.md`).
+- **Diagnóstico que não se perde.** Eventos de Wi-Fi sobrevivem a um POST que
+  falhou (antes, `info`/`warn` iam embora junto, e o primeiro POST depois de
+  reassociar costuma falhar: em 69 h com 10 quedas, nenhum `wifi.disconnected`
+  chegou ao banco). `wifi.disconnected` traz o motivo do ESP-IDF e o RSSI de
+  antes; `wifi.connected`, quanto tempo ficou sem Wi-Fi, o AP e o canal; e a
+  volta de um período sem contato de mais de 1 min manda `api.outage_summary`
+  (`outage_tracker.*`): duração, falhas por tipo, tempo sem Wi-Fi, quedas,
+  motivo e faixa de RSSI.
+- **Telemetria e `/status`** levam `bssid`, `channel` e
+  `last_disconnect_reason`. O `/status` local também mostra o AP fixado e um
+  bloco `diag` com a leitura crua do potenciômetro (`pot_raw_adc`) — girar o
+  botão e ver o número mudar é o teste de bancada do pot, sem depender do
+  servidor.
 
 ### O limite de refeições do alimentador (2.1.0)
 

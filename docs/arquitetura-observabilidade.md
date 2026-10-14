@@ -183,11 +183,30 @@ raros. O ganho é que a falha volta com nome.
 
 ### Quem decide `expired`
 
-O watchdog de 30 s que já estava previsto. Se um comando está `sent` há mais de
-`COMMAND_TTL_S` (padrão 90 s) sem `ack`, vira `expired` e gera um evento de
-servidor com `code: cmd.expired`. Se o dispositivo nunca chegou a receber
-(continua `queued` e não há POST há mais de 15 s), o evento é
-`cmd.device_offline` — são causas diferentes e o usuário precisa distinguir.
+O watchdog de 30 s que já estava previsto, com um prazo de vida contado da
+**criação** do comando: `COMMAND_MAX_AGE_S` (padrão 15 min). Até ele, o comando
+espera o aquário e é reentregue a cada POST — inclusive depois de `sent`, porque
+`sent` só quer dizer "foi numa resposta", e com o Wi-Fi do aquário a resposta se
+perde com frequência. Vencido o prazo:
+
+- `sent` sem `ack` vira `expired` com `cmd.expired` (pode ter sido executado; se
+  a confirmação aparecer depois, vira o evento `cmd.late_ack`). Quem foi
+  entregue no último minuto ganha mais 2 min de folga para o `ack` voltar.
+- `queued` vira `expired` com `cmd.stale_discarded`: nunca chegou ao aquário.
+
+Enquanto continua `queued` e não há POST há mais de 15 s, o evento é
+`cmd.device_offline` — a fila esperando, não uma falha.
+
+Até a v1.2.0 o prazo era `COMMAND_TTL_S`, 90 s contados da primeira entrega:
+uma resposta perdida logo antes de uma queda bastava para o comando morrer, já
+executado ou não. Os 15 min vieram do histórico de produção (2026-10-07 a 14):
+87% das 103 quedas duraram menos que isso.
+
+**Reinício no meio.** O firmware 2.1.1 reconhece uma reentrega pelo `id` e
+confirma sem executar de novo — mas perde essa memória ao reiniciar. Por isso,
+quando o `boot_id` muda com `feeder.feed_now` ou `device.reboot` ainda `sent`,
+o servidor não reentrega: o reboot é confirmado (aconteceu), e a alimentação
+encerrada como `cmd.interrupted`, para não dobrar a ração.
 
 ### O que a interface mostra
 

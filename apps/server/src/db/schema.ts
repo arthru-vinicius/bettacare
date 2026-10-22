@@ -19,6 +19,7 @@ import {
   smallint,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -398,6 +399,66 @@ export const telemetryHourly = pgTable(
     samples: integer("samples").notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.deviceId, t.hour] })],
+);
+
+// ── fan_runs ──────────────────────────────────────────────────────────────
+
+/**
+ * Uma linha por **rodada** da ventoinha: de quando ligou a quando desligou.
+ *
+ * Existe porque a pergunta "ela está dando conta de regular a temperatura?"
+ * não se responde com a telemetria bruta: ali há uma linha por minuto, e
+ * descobrir os começos e fins exige varrer e comparar linhas vizinhas a cada
+ * consulta. Aqui o fim da rodada fecha a linha (o ingest sabe a hora, a
+ * temperatura de saída e o pico na hora em que acontece) e a consulta é um
+ * `select` simples.
+ *
+ * **Não cresce sem limite.** São dezenas de rodadas por dia no pior caso, e a
+ * manutenção diária apaga o que passa de `FAN_RUNS_RETENTION_DAYS` (90 dias)
+ * e, por segurança, o que excede `FAN_RUNS_MAX_ROWS` — uma ventoinha
+ * oscilando não pode encher o banco. O Postgres reaproveita o espaço liberado,
+ * então o tamanho da tabela fica estável em vez de acompanhar a idade.
+ *
+ * No máximo **uma rodada aberta** (`ended_at` nulo) por dispositivo: o índice
+ * parcial garante, e é o que deixa o ingest fechar a rodada com um
+ * `UPDATE ... WHERE ended_at IS NULL` sem precisar lê-la antes.
+ */
+export const fanRuns = pgTable(
+  "fan_runs",
+  {
+    id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+    deviceId: text("device_id")
+      .notNull()
+      .references(() => devices.deviceId, { onDelete: "cascade" }),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    /** Nulo enquanto a ventoinha segue ligada. */
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    /**
+     * Última vez que um POST viu a ventoinha ligada nesta rodada. É o limite
+     * inferior do fim quando o aquário some no meio da rodada: sabemos que
+     * girou até aqui, não depois.
+     */
+    lastOnAt: timestamp("last_on_at", { withTimezone: true }).notNull(),
+    /** Como a rodada começou. */
+    mode: fanModeEnum("mode").notNull().default("auto"),
+    /** Alguém mexeu (app, botão, potenciômetro) em algum momento da rodada. */
+    manual: boolean("manual").notNull().default(false),
+    speedMax: smallint("speed_max").notNull().default(0),
+    tempStart: real("temp_start"),
+    tempEnd: real("temp_end"),
+    /** Maior e menor temperatura vistas com a ventoinha ligada. */
+    tempPeak: real("temp_peak"),
+    tempLow: real("temp_low"),
+    /** Houve silêncio do aquário: início ou fim são limites, não o instante exato. */
+    approx: boolean("approx").notNull().default(false),
+  },
+  (t) => [
+    /** A consulta do app: rodadas de um período, mais recentes primeiro. */
+    index("fan_runs_device_started_idx").on(t.deviceId, t.startedAt),
+    uniqueIndex("fan_runs_one_open_idx")
+      .on(t.deviceId)
+      .where(sql`${t.endedAt} is null`),
+  ],
 );
 
 // ── commands ──────────────────────────────────────────────────────────────

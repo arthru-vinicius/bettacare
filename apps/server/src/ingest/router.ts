@@ -22,6 +22,9 @@ import { processTelemetry } from "./process.js";
  */
 const MAX_BODY_BYTES = 16 * 1024;
 
+/** Processamento no servidor que vale um aviso no log (ver o uso abaixo). */
+const SLOW_INGEST_MS = 1000;
+
 /**
  * O roteador da porta do ESP32 (8080), publicada com bind explícito no IP da
  * LAN.
@@ -94,6 +97,7 @@ export function createIngestRouter(rt: Runtime): Hono {
 
     const now = new Date();
     try {
+      const inicio = performance.now();
       const result = await processTelemetry(
         rt.db,
         rt.cfg,
@@ -101,6 +105,18 @@ export function createIngestRouter(rt: Runtime): Hono {
         now,
         sanitized.corrections,
       );
+
+      // O firmware mede a latência do POST inteira (rádio + servidor) e não sabe
+      // dividir. Isto separa: se o servidor demorou, está aqui; se não está,
+      // o atraso foi na rede (produção, 2026-10: 46% dos POSTs acima de 3 s numa
+      // madrugada, sem nenhuma pista de qual lado).
+      const ms = Math.round(performance.now() - inicio);
+      if (ms >= SLOW_INGEST_MS) {
+        rt.log.warn(
+          { device: sanitized.data.device_id, seq: sanitized.data.seq, ms },
+          "ingest lento: o processamento no servidor passou de 1 s",
+        );
+      }
 
       // `warn` só para a correção que abriu evento; a repetida, que só somou
       // `repeat_count`, vai para `debug` — um campo errado em todo POST era
@@ -133,7 +149,7 @@ export function createIngestRouter(rt: Runtime): Hono {
       /**
        * Notifica **depois** de responder ao dispositivo, sem `await`.
        *
-       * O ESP32 tem timeout de 4 s; fazê-lo esperar uma entrega a um push
+       * O ESP32 tem timeout de 8 s; fazê-lo esperar uma entrega a um push
        * service externo transformaria um alerta em causa de falha de
        * telemetria. O `catch` é obrigatório aqui: sem ele, uma rejeição vira
        * `unhandledRejection`.

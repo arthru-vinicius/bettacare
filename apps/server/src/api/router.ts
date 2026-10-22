@@ -1,4 +1,4 @@
-import { pushSubscriptionSchema } from "@bettacare/contract";
+import { historyRangeSchema, pushSubscriptionSchema } from "@bettacare/contract";
 import { Hono } from "hono";
 
 import { pingDatabase } from "../db/client.js";
@@ -11,6 +11,7 @@ import {
 } from "../push/notify.js";
 import { accessIdentity, currentUser } from "./access.js";
 import { eventosCsv, medicoesCsv, nomeDoArquivo, parsePeriodo } from "./export.js";
+import { getFanHistory } from "./history.js";
 import {
   enqueueCommand,
   getOverview,
@@ -210,6 +211,18 @@ export function createApiRouter(rt: Runtime): Hono {
       tag: "teste",
     });
     return c.json({ ok: true });
+  });
+
+  /**
+   * Temperatura e rodadas da ventoinha de um período (`24h`, `7d` ou `30d`).
+   * Vem da telemetria bruta, com a resolução de cada período — ver
+   * `HISTORY_SPEC` — e alimenta a aba Ventoinha.
+   */
+  api.get("/history/fan", async (c) => {
+    const device = c.req.query("device") ?? DEFAULT_DEVICE;
+    const range = historyRangeSchema.safeParse(c.req.query("range") ?? "24h");
+    if (!range.success) return c.json({ error: "invalid_range" }, 400);
+    return c.json(await getFanHistory(rt.db, device, range.data));
   });
 
   api.get("/report", async (c) => {

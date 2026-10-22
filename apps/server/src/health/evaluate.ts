@@ -58,6 +58,14 @@ const UNCLEAN_RESETS = new Set([
  * livres, então 40 KB é sinal de que algo consumiu quase tudo.
  */
 const LOW_HEAP_BYTES = 40_000;
+/**
+ * Por quanto tempo uma perda de eventos conta como atual. `events_dropped` é
+ * cumulativo desde o boot e só zera no reinício: contado como estado, o
+ * Sistema ficava "instável" por dias depois de uma única queda de rede longa
+ * (produção, 2026-10: 25 eventos perdidos no apagão de 21 h deixaram o aviso de
+ * pé por uma semana).
+ */
+const EVENT_DROP_RECENT_MS = 60 * 60_000;
 
 export interface HealthVerdict {
   comp: Component;
@@ -113,7 +121,7 @@ export function evaluateHealth(
     evaluatePot(t),
     evaluateNvs(t),
     evaluateOta(t),
-    evaluateSystem(t),
+    evaluateSystem(t, ctx),
     // Os avaliadores que dependem de `diag` voltam `null` para um firmware
     // que ainda não o manda — sem o dado, não há veredito honesto a dar, e o
     // componente simplesmente não aparece na aba Saúde (em vez de fingir
@@ -353,15 +361,33 @@ function evaluateOta(t: TelemetryRequest): HealthVerdict | null {
  * caso aparece como dispositivo offline, e é o watchdog do servidor que o
  * detecta.
  */
-function evaluateSystem(t: TelemetryRequest): HealthVerdict | null {
+function evaluateSystem(t: TelemetryRequest, ctx: HealthContext): HealthVerdict | null {
   if (t.diag === undefined) return null;
 
   const { reset_reason, free_heap, max_alloc_heap, events_dropped } = t.diag;
+
+  // Quando o contador subiu pela última vez. Sem leitura anterior do contador
+  // (primeira avaliação), uma perda já registrada conta como atual — melhor
+  // mostrar do que esconder; depois disso só um aumento reabre a janela.
+  const anterior = ctx.previousDetail.system;
+  const contagemAntes = anterior?.["events_dropped"];
+  const desdeAntes = anterior?.["dropped_at"];
+  let droppedAt: string | null =
+    typeof desdeAntes === "string" && !Number.isNaN(Date.parse(desdeAntes)) ? desdeAntes : null;
+  if (events_dropped === 0) {
+    droppedAt = null; // o contador zerou: o aparelho reiniciou
+  } else if (typeof contagemAntes !== "number" || events_dropped > contagemAntes) {
+    droppedAt = ctx.now.toISOString();
+  }
+  const recente =
+    droppedAt !== null && ctx.now.getTime() - Date.parse(droppedAt) < EVENT_DROP_RECENT_MS;
+
   const detail = {
     reset_reason: reset_reason ?? null,
     free_heap: free_heap ?? null,
     max_alloc_heap: max_alloc_heap ?? null,
     events_dropped,
+    dropped_at: droppedAt,
   };
 
   // Reinício não comandado é o sinal mais forte que existe: aponta para
@@ -374,8 +400,8 @@ function evaluateSystem(t: TelemetryRequest): HealthVerdict | null {
     return { comp: "system", status: "degraded", code: "system.low_memory", detail };
   }
   // Perder evento por estouro de buffer é perder diagnóstico — degradação da
-  // própria capacidade de investigar, que merece aparecer.
-  if (events_dropped > 0) {
+  // própria capacidade de investigar, que merece aparecer enquanto é recente.
+  if (recente) {
     return {
       comp: "system",
       status: "degraded",

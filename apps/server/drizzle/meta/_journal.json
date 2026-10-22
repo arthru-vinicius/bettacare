@@ -92,6 +92,13 @@
       "when": 1791950866756,
       "tag": "0012_rede_instavel",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792643082083,
+      "tag": "0013_acionamentos_ventoinha",
+      "breakpoints": true
     }
   ]
 }

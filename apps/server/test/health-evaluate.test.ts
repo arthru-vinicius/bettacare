@@ -282,4 +282,56 @@ describe("saúde: nvs, ota e system — os 3 que faltavam", () => {
     assert.equal(sys?.status, "degraded");
     assert.equal(sys?.code, "system.event_overflow");
   });
+
+  describe("a perda de eventos é um episódio, não um estado para sempre", () => {
+    /**
+     * `events_dropped` é cumulativo desde o boot. Em produção (2026-10), 25
+     * eventos perdidos no apagão de 21 h deixaram o Sistema "instável" por uma
+     * semana, com um aviso que culpava um componente em rajada que não existia.
+     */
+    const com = (events_dropped: number, quando: Date, previous?: Record<string, unknown> | null) =>
+      evaluateHealth(
+        corpo({ diag: { reset_reason: "poweron", free_heap: 200_000, events_dropped } }),
+        { previousDetail: previous ? { system: previous } : {}, lightDesired: null, now: quando },
+      ).find((v) => v.comp === "system")!;
+    const minutos = (m: number) => new Date(T0.getTime() + m * 60_000);
+
+    it("o contador subir abre a janela de 1 h; passada ela, o Sistema volta ao normal", () => {
+      const antes = com(0, minutos(0));
+      assert.equal(antes.status, "ok");
+
+      const subiu = com(3, minutos(1), antes.detail);
+      assert.equal(subiu.status, "degraded");
+      assert.equal(subiu.code, "system.event_overflow");
+
+      const aos59 = com(3, minutos(60), subiu.detail);
+      assert.equal(aos59.status, "degraded", "59 min depois da perda ainda é recente");
+
+      const aos61 = com(3, minutos(62), aos59.detail);
+      assert.equal(aos61.status, "ok", "61 min depois, o contador parado não é mais problema");
+    });
+
+    it("uma perda nova depois disso reabre a janela", () => {
+      const velho = com(3, minutos(120), { events_dropped: 3, dropped_at: minutos(1).toISOString() });
+      assert.equal(velho.status, "ok");
+      const novo = com(7, minutos(121), velho.detail);
+      assert.equal(novo.status, "degraded");
+    });
+
+    it("o contador herdado de antes desta regra não acende o aviso de novo", () => {
+      // O que está gravado hoje em produção: 25 perdidos, sem `dropped_at`.
+      const v = com(25, minutos(0), { events_dropped: 25, reset_reason: "poweron" });
+      assert.equal(v.status, "ok");
+      assert.equal(v.detail?.["dropped_at"], null);
+    });
+
+    it("reiniciar zera o contador e a janela", () => {
+      const reiniciado = com(0, minutos(5), {
+        events_dropped: 25,
+        dropped_at: minutos(1).toISOString(),
+      });
+      assert.equal(reiniciado.status, "ok");
+      assert.equal(reiniciado.detail?.["dropped_at"], null);
+    });
+  });
 });

@@ -5,6 +5,7 @@ import {
   databaseSizeBytes,
   ensureCurrentPartitions,
   enforceSizeLimit,
+  type Db,
 } from "../db/client.js";
 import { devices, events } from "../db/schema.js";
 import type { Runtime } from "../runtime.js";
@@ -82,6 +83,11 @@ export async function runMaintenance(rt: Runtime): Promise<void> {
 
   await ensureCurrentPartitions(rt.db);
   const rolled = await rollupPendingHours(rt);
+  const rodadasPodadas = await pruneFanRuns(
+    rt.db,
+    rt.cfg.FAN_RUNS_RETENTION_DAYS,
+    rt.cfg.FAN_RUNS_MAX_ROWS,
+  );
   const dropped = await enforceSizeLimit(rt.db, rt.cfg.DB_SIZE_LIMIT_BYTES);
 
   for (const p of dropped) {
@@ -126,11 +132,46 @@ export async function runMaintenance(rt: Runtime): Promise<void> {
     {
       ms: Date.now() - started,
       horas_agregadas: rolled,
+      rodadas_podadas: rodadasPodadas,
       particoes_descartadas: dropped.length,
       tamanho_mb: Math.round(size / 1024 / 1024),
     },
     "manutenção diária concluída",
   );
+}
+
+/**
+ * Apaga as rodadas da ventoinha que passaram do prazo de guarda ou do teto de
+ * linhas por dispositivo, e devolve quantas foram.
+ *
+ * É o "dado antigo é sobrescrito" do histórico de acionamentos: a tabela não
+ * cresce com a idade da instalação, porque o Postgres reaproveita o espaço do
+ * que sai. Nunca toca a rodada aberta (`ended_at` nulo) — é a ventoinha
+ * girando agora, e o índice parcial conta com ela.
+ */
+export async function pruneFanRuns(
+  db: Db,
+  retentionDays: number,
+  maxRows: number,
+): Promise<number> {
+  const velhas = await db.execute(sql`
+    delete from fan_runs
+     where ended_at is not null
+       and started_at < now() - make_interval(days => ${retentionDays}::int)
+  `);
+  const excedentes = await db.execute(sql`
+    delete from fan_runs
+     where ended_at is not null
+       and id in (
+         select id
+           from (
+             select id, row_number() over (partition by device_id order by started_at desc) as n
+               from fan_runs
+           ) ordenadas
+          where n > ${maxRows}::int
+       )
+  `);
+  return (velhas.rowCount ?? 0) + (excedentes.rowCount ?? 0);
 }
 
 /**

@@ -30,6 +30,7 @@ import {
   telemetry,
 } from "../db/schema.js";
 import { evaluateHealth, shouldWriteHistory } from "../health/evaluate.js";
+import { trackFanRun } from "./fan-runs.js";
 
 /**
  * Quantos comandos cabem numa resposta. O corpo precisa continuar pequeno e
@@ -294,6 +295,26 @@ export async function processTelemetry(
           potRawAdc: body.diag?.pot_raw_adc ?? null,
         });
       }
+
+      // Rodadas da ventoinha: o histórico que diz se ela dá conta da temperatura.
+      await trackFanRun(
+        tx,
+        body.device_id,
+        previous
+          ? { on: previous.fanOn, at: previous.updatedAt, bootId: previous.lastBootId }
+          : null,
+        {
+          on: body.fan.on,
+          mode: body.fan.mode,
+          speedPercent: body.fan.speed_percent,
+          // Leitura velha não é a temperatura de agora.
+          celsius: body.temperature.valid ? body.temperature.celsius : null,
+          bootId: body.boot_id,
+          uptimeMs: body.uptime_ms,
+          at: now,
+        },
+        wroteHistory,
+      );
 
       const diagnostic = await recordDiagnostic(tx, body, now);
 
@@ -774,8 +795,13 @@ async function recordHealth(
     // indistinguíveis (UPGRADE/04, S10).
     const primeiraVez = before === undefined;
     const recovered = v.status === "ok";
+    // Voltar de "sem informação" para "normal" não é recuperação: o watchdog
+    // zerou o status porque o aquário ficou mudo, nada tinha quebrado — e o
+    // `device.online` já conta a volta. Sem isto, cada queda de contato gerava
+    // onze "voltou ao normal" (880 de 9.600 eventos em oito dias, 2026-10).
+    const voltouDoSilencio = recovered && before?.status === "unknown";
 
-    if (changed && !(primeiraVez && recovered)) {
+    if (changed && !(primeiraVez && recovered) && !voltouDoSilencio) {
       const nome = COMPONENT_LABELS[v.comp];
       await insertServerEvent(tx, body.device_id, now, {
         sev: recovered ? "info" : v.status === "degraded" ? "warn" : "error",

@@ -49,6 +49,16 @@ const envSchema = z.object({
     .min(64 * 1024 * 1024)
     .default(1024 * 1024 * 1024),
 
+  /**
+   * Por quanto tempo guardar o histórico de rodadas da ventoinha (`fan_runs`).
+   * O app mostra até 30 dias; 90 dá folga para olhar um mês contra o outro. O
+   * que passa disso é apagado na manutenção diária e o espaço é reaproveitado —
+   * a tabela fica do mesmo tamanho em vez de crescer com a idade da instalação.
+   */
+  FAN_RUNS_RETENTION_DAYS: z.coerce.number().int().min(7).max(3650).default(90),
+  /** Teto de linhas de `fan_runs` por dispositivo, contra uma ventoinha oscilando. */
+  FAN_RUNS_MAX_ROWS: z.coerce.number().int().min(100).default(20_000),
+
   /** Silêncio a partir do qual o dispositivo é dado como offline. */
   DEVICE_OFFLINE_AFTER_S: z.coerce.number().int().min(10).default(60),
   /**

@@ -19,6 +19,15 @@ void wifi_check_reconnect();
 bool wifi_is_connected();
 
 /**
+ * @brief Desassocia e associa de novo, com a configuração atual.
+ *
+ * Para a task de rede chamar quando o Wi-Fi está associado mas o servidor não
+ * responde há minutos (`net_watchdog.h`): limpa a tabela ARP, o lease e os
+ * sockets dos dois lados. A desassociação pedida não conta como queda.
+ */
+void wifi_reassociate(const char *motivo);
+
+/**
  * @brief Informa se o modo de recuperação (AP de configuração) está ativo.
  */
 bool wifi_recovery_ap_active();

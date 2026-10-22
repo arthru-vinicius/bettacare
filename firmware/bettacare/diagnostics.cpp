@@ -218,14 +218,20 @@ static void _probe_pot(DiagnosticReport& r) {
   }
   int adc = (int)(soma / 8);
 
+  // Os extremos são posições do botão, não defeito: o mínimo é onde o
+  // potenciômetro desliga a ventoinha, e o topo satura o ADC antes dos 3,3 V em
+  // qualquer montagem boa (UPGRADE/02, §8). O servidor já os trata assim
+  // (`evaluatePot`). Marcá-los "degraded" aqui fazia todo autodiagnóstico com o
+  // botão no mínimo acusar problema — e um alarme que dispara sempre se aprende
+  // a ignorar. O aviso sobre o fio do cursor fica no texto, sem acusar ninguém.
   if (adc >= 4090) {
-    _add(r, COMP_POT, "degraded", true,
-         "ADC saturado no topo (%d/4095). Pode ser fim de curso ou saturacao do conversor.", adc);
+    _add(r, COMP_POT, "ok", true,
+         "No fim do curso (%d/4095): posicao do botao, nao defeito.", adc);
     return;
   }
   if (adc <= 2) {
-    _add(r, COMP_POT, "degraded", true,
-         "ADC colado no zero (%d/4095). Pode ser fim de curso ou wiper sem contato.", adc);
+    _add(r, COMP_POT, "ok", true,
+         "No minimo (%d/4095), onde a ventoinha desliga pelo botao. Se ele nao esta no minimo, confira o fio do cursor.", adc);
     return;
   }
 

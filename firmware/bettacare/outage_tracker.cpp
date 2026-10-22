@@ -21,6 +21,8 @@ void OutageTracker::_begin(uint32_t now_ms) {
   _timeouts  = 0;
   _conn      = 0;
   _other     = 0;
+  _last_other = 0;
+  _has_heap  = false;
   _no_wifi_ms = 0;
   _last_no_wifi_ms = 0;
   _drops     = 0;
@@ -28,7 +30,8 @@ void OutageTracker::_begin(uint32_t now_ms) {
   _has_rssi  = false;
 }
 
-void OutageTracker::on_failure(uint32_t now_ms, int http_status, int16_t rssi, bool rssi_valid) {
+void OutageTracker::on_failure(uint32_t now_ms, int http_status, int16_t rssi, bool rssi_valid,
+                               uint32_t free_heap) {
   _begin(now_ms);
   if (http_status == HTTPC_READ_TIMEOUT) {
     if (_timeouts < 65535) _timeouts++;
@@ -36,8 +39,14 @@ void OutageTracker::on_failure(uint32_t now_ms, int http_status, int16_t rssi, b
     if (_conn < 65535) _conn++;
   } else {
     if (_other < 65535) _other++;
+    _last_other = http_status;
   }
   _last_no_wifi_ms = 0;
+
+  if (free_heap > 0 && (!_has_heap || free_heap < _heap_min)) {
+    _heap_min = free_heap;
+    _has_heap = true;
+  }
 
   if (rssi_valid) {
     if (!_has_rssi) {
@@ -94,9 +103,20 @@ bool OutageTracker::on_success(uint32_t now_ms, uint32_t min_ms, char* out, size
 
   unsigned falhas = (unsigned)_timeouts + _conn + _other;
   if (falhas > 0 && n < len) {
-    n += (size_t)snprintf(out + n, len - n, ": %u %s (%u sem resposta, %u sem conexao)",
+    n += (size_t)snprintf(out + n, len - n, ": %u %s (%u sem resposta, %u sem conexao",
                           falhas, falhas == 1 ? "falha" : "falhas", (unsigned)_timeouts,
                           (unsigned)_conn);
+    if (_other > 0 && n < len) {
+      // Só o código negativo diz algo (-8 é "sem RAM"); um 5xx já tem a sua história no servidor.
+      const char* palavra = _other == 1 ? "outra" : "outras";
+      if (_last_other < 0) {
+        n += (size_t)snprintf(out + n, len - n, ", %u %s, ult. %d", (unsigned)_other, palavra,
+                              _last_other);
+      } else {
+        n += (size_t)snprintf(out + n, len - n, ", %u %s", (unsigned)_other, palavra);
+      }
+    }
+    if (n < len) n += (size_t)snprintf(out + n, len - n, ")");
   }
   if ((_no_wifi_ms > 0 || _drops > 0) && n < len) {
     char w[16];
@@ -107,7 +127,10 @@ bool OutageTracker::on_success(uint32_t now_ms, uint32_t min_ms, char* out, size
     }
   }
   if (_has_rssi && n < len) {
-    snprintf(out + n, len - n, "; RSSI %d..%d", (int)_rssi_min, (int)_rssi_max);
+    n += (size_t)snprintf(out + n, len - n, "; RSSI %d..%d", (int)_rssi_min, (int)_rssi_max);
+  }
+  if (_has_heap && n < len) {
+    snprintf(out + n, len - n, "; heap min %lu KB", (unsigned long)(_heap_min / 1024));
   }
   return true;
 }

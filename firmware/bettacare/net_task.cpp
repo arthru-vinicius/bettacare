@@ -7,6 +7,8 @@
 #include "config.h"
 #include "device_config.h"
 #include "event_log.h"
+#include "light.h"
+#include "net_watchdog.h"
 #include "outage_tracker.h"
 #include "rtc_manager.h"
 #include "web_server.h"
@@ -47,6 +49,9 @@ static const uint32_t REBOOT_SAFETY_TIMEOUT_MS = 60000;
 static const uint32_t NTP_RESYNC_INTERVAL_MS = 24UL * 60 * 60 * 1000;
 
 static bool _ever_connected = false;
+
+/** Memória livre abaixo da qual a task de rede registra o aperto, uma vez por boot. */
+static const uint32_t HEAP_LOW_WATER_BYTES = 16000;
 
 /**
  * Período sem contato a partir do qual a volta manda `api.outage_summary`.
@@ -89,6 +94,13 @@ static void _net_loop(void*) {
   /** 0 = nunca sincronizado — força a primeira tentativa assim que houver rede. */
   uint32_t ultimo_ntp_ok_ms = 0;
   uint16_t quedas_vistas = 0;
+
+  net_watchdog_init();
+  /** Desde quando os POSTs falham com o Wi-Fi de pé (0 = não estão falhando) e a última reassociação. */
+  uint32_t falhando_desde_ms = 0;
+  uint32_t ultima_reassociacao_ms = 0;
+  bool houve_reassociacao = false;
+  bool avisou_heap = false;
 
   for (;;) {
     esp_task_wdt_reset();
@@ -153,6 +165,27 @@ static void _net_loop(void*) {
                   "Primeiro contato com o servidor estabelecido");
       }
 
+      if (r == API_OK) {
+        falhando_desde_ms = 0;
+        net_watchdog_contato_ok(depois);
+      } else if (r == API_NO_WIFI) {
+        falhando_desde_ms = 0; // sem Wi-Fi quem cuida é o gerenciador de Wi-Fi
+      } else {
+        // Wi-Fi de pé e POST falhando: um estado que desassociar e reassociar
+        // costuma limpar (ver `net_watchdog.h`).
+        if (falhando_desde_ms == 0) falhando_desde_ms = depois;
+        uint32_t falhando = depois - falhando_desde_ms;
+        uint32_t desde_ultima = houve_reassociacao ? depois - ultima_reassociacao_ms : 0xFFFFFFFFUL;
+        if (net_stall_deve_reassociar(falhando, desde_ultima)) {
+          char motivo[48];
+          snprintf(motivo, sizeof(motivo), "POSTs falhando ha %lu s com Wi-Fi", (unsigned long)(falhando / 1000UL));
+          wifi_reassociate(motivo);
+          houve_reassociacao = true;
+          ultima_reassociacao_ms = depois;
+          falhando_desde_ms = depois; // recomeça a contagem
+        }
+      }
+
       // O que aconteceu durante um período sem contato — na volta, vira um
       // evento só, com o resumo (ver `outage_tracker.h`).
       if (r == API_OK) {
@@ -163,7 +196,8 @@ static void _net_loop(void*) {
       } else if (r == API_NO_WIFI) {
         _outage.on_no_wifi(depois);
       } else {
-        _outage.on_failure(depois, api_client_last_http_status(), wifi_rssi(), wifi_rssi_valid());
+        _outage.on_failure(depois, api_client_last_http_status(), wifi_rssi(), wifi_rssi_valid(),
+                           ESP.getFreeHeap());
       }
 
       /**
@@ -200,6 +234,27 @@ static void _net_loop(void*) {
       if (r == API_OK && app_state_reboot_requested()) {
         delay(50);
         ESP.restart();
+      }
+    }
+
+    // Aperto de memória: o mínimo histórico de 756 bytes visto em produção
+    // (2026-10) não dizia quando nem por quê. Um evento por boot, com o estado
+    // do momento, para a próxima ocorrência ter contexto.
+    if (!avisou_heap && ESP.getMinFreeHeap() < HEAP_LOW_WATER_BYTES) {
+      avisou_heap = true;
+      event_log(SEV_WARN, COMP_SYSTEM, "system.heap_low_water",
+                "Memoria livre chegou a %lu bytes (AP de recuperacao %s, Wi-Fi %s, %u eventos na fila)",
+                (unsigned long)ESP.getMinFreeHeap(), wifi_recovery_ap_active() ? "ativo" : "desligado",
+                wifi_is_connected() ? "de pe" : "caido", (unsigned)event_log_pending());
+    }
+
+    // Último recurso — ver `net_watchdog.h`. Só com a luminária apagada: reiniciar
+    // liga e desliga o relé, e o controlador dela troca de padrão.
+    {
+      uint32_t sem_contato = millis() - api_client_last_success_ms();
+      if (net_watchdog_deve_reiniciar(sem_contato, net_watchdog_sequencia(), light_get_state(),
+                                      millis())) {
+        net_watchdog_reiniciar(sem_contato);
       }
     }
 

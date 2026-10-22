@@ -39,7 +39,9 @@ int main() {
   CHECK(t.on_success(5000 + 12 * 60000, 60000, msg, sizeof(msg)), "vira resumo");
   printf("   \"%s\"\n", msg);
   CHECK(contem(msg, "Sem contato por 12 min"), "duracao desde o ultimo sucesso");
-  CHECK(contem(msg, "6 falhas (3 sem resposta, 2 sem conexao)"), "falhas por tipo");
+  CHECK(contem(msg, "6 falhas (3 sem resposta, 2 sem conexao, 1 outra)"), "falhas por tipo");
+  CHECK(!contem(msg, "ult."), "um 5xx nao entra no texto: so o codigo de rede diz algo");
+  CHECK(!contem(msg, "heap"), "sem medicao de memoria, nao fala dela");
   CHECK(contem(msg, "RSSI -81..-72"), "faixa de RSSI, ignorando leitura invalida");
   CHECK(!contem(msg, "Wi-Fi"), "sem queda de Wi-Fi, nao fala dela");
 
@@ -75,6 +77,25 @@ int main() {
   char curto[24];
   CHECK(c.on_success(600000, 60000, curto, sizeof(curto)), "resumo");
   CHECK(strlen(curto) < sizeof(curto), "truncado dentro do buffer");
+
+  printf("O7 codigo de erro de rede das 'outras' e a memoria minima do periodo\n");
+  OutageTracker m;
+  m.on_success(0, 60000, msg, sizeof(msg));
+  m.on_failure(1000, -11, -70, true, 90000);
+  m.on_failure(2000, -8, -70, true, 31000);   // -8: sem RAM para a resposta
+  m.on_failure(3000, -8, -70, true, 62000);
+  m.on_failure(4000, -1, -70, true, 0);       // 0 = nao medido: nao conta como o minimo
+  CHECK(m.on_success(180000, 60000, msg, sizeof(msg)), "resumo");
+  printf("   \"%s\"\n", msg);
+  CHECK(contem(msg, "4 falhas (1 sem resposta, 1 sem conexao, 2 outras, ult. -8)"), "o codigo de rede aparece");
+  CHECK(contem(msg, "heap min 30 KB"), "o minimo do periodo (31000 B), em KB");
+  CHECK(strlen(msg) < sizeof(msg), "cabe na mensagem do evento");
+
+  printf("O8 um periodo novo nao herda a memoria nem o codigo do anterior\n");
+  m.on_failure(200000, -11, -70, true);
+  CHECK(m.on_success(400000, 60000, msg, sizeof(msg)), "resumo");
+  CHECK(!contem(msg, "heap"), "memoria do periodo anterior esquecida");
+  CHECK(!contem(msg, "outra"), "codigo do periodo anterior esquecido");
 
   printf("\n%d verificacoes ok, %d falharam\n", g_ok, g_fail);
   return g_fail ? 1 : 0;

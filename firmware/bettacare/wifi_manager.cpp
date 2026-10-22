@@ -722,6 +722,11 @@ bool wifi_is_connected() {
   return WiFi.status() == WL_CONNECTED;
 }
 
+void wifi_reassociate(const char *motivo) {
+  event_log(SEV_WARN, COMP_WIFI, "wifi.api_stall_reassoc", "Reassociando o Wi-Fi: %s", motivo);
+  _restart_connection("api-stall");
+}
+
 bool wifi_recovery_ap_active() {
   return _recovery_ap_active;
 }

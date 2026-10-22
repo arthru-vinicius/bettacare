@@ -18,8 +18,14 @@
  */
 class OutageTracker {
  public:
-  /** POST que falhou com o Wi-Fi de pé. `http_status` negativo é erro de rede do HTTPClient. */
-  void on_failure(uint32_t now_ms, int http_status, int16_t rssi, bool rssi_valid);
+  /**
+   * POST que falhou com o Wi-Fi de pé. `http_status` negativo é erro de rede do
+   * HTTPClient. `free_heap` (0 = não medido) entra no resumo como o mínimo do
+   * período: o heap de 756 bytes visto em produção (2026-10) não tinha como
+   * dizer em que momento aconteceu.
+   */
+  void on_failure(uint32_t now_ms, int http_status, int16_t rssi, bool rssi_valid,
+                  uint32_t free_heap = 0);
 
   /** POST que nem saiu: sem Wi-Fi. Chamado a cada ciclo da task de rede. */
   void on_no_wifi(uint32_t now_ms);
@@ -45,6 +51,9 @@ class OutageTracker {
   uint16_t _timeouts = 0;   // -11: a requisição saiu, a resposta não voltou
   uint16_t _conn = 0;       // -1: nem conectou
   uint16_t _other = 0;      // qualquer outro código, inclusive 5xx
+  int      _last_other = 0;     // o último deles (só o negativo, de rede, entra no texto)
+  uint32_t _heap_min = 0;
+  bool     _has_heap = false;
   uint32_t _no_wifi_ms = 0;
   uint32_t _last_no_wifi_ms = 0;
   uint16_t _drops = 0;

@@ -42,6 +42,37 @@ Revisado em 2026-10-02 com o usuário usando o app de verdade:
   true`). É o único caminho para passar do limite — pelo botão do módulo, não
   há.
 
+Revisado em 2026-10-22 (v1.4.0), a pedido do usuário depois de semanas de uso:
+
+- **Ventoinha: histórico de verdade.** O gráfico antigo era uma média por hora,
+  sem como ler um valor. O novo é uma curva em que **tocar, arrastar (ou passar
+  o mouse) mostra a temperatura exata e o dia e a hora** daquele momento — acima
+  do gráfico, onde o dedo não cobre. O toque fixa o ponto (“Limpar” ou Esc
+  solta); pelo teclado, as setas andam ponto a ponto. A rolagem vertical da
+  página continua valendo por cima do gráfico; só o arraste na horizontal é
+  dele. Mostra os limites de liga e desliga da ventoinha (só quando a água está
+  perto deles), a faixa de quando ela esteve ligada, os silêncios do aquário
+  como buracos (ligar os dois lados por uma reta seria desenhar uma temperatura
+  que ninguém mediu) e mínima/média/máxima do período — mínima e máxima levam o
+  cursor ao momento em que aconteceram. Há também uma tabela com a mesma série,
+  para quem não usa o gráfico.
+- **Acionamentos da ventoinha.** Um segundo cartão, com o mesmo período do
+  gráfico: quantos foram, quanto tempo a ventoinha ficou ligada, duração e
+  variação média de temperatura, e a tabela — quando ligou, quando desligou,
+  quanto girou, de que temperatura partiu e onde chegou (com ▼ esfriou, ▲
+  esquentou ou ≈ estável, e o pico). Tocar numa linha a mostra no gráfico. A
+  rodada em curso conta o tempo ao vivo e mostra a temperatura de agora. Sem
+  nenhum acionamento, o cartão diz por quê: "a água ficou entre 21,9 e 28,8 °C,
+  sempre abaixo dos 29,0 °C em que a ventoinha liga".
+- **Luz acesa por dia foi para a Luminária** ("Tempo aceso"): por hora nas
+  últimas 24 h e por dia em 7 e 30 dias, com o horário programado tracejado.
+- O seletor de período fica **uma vez, acima dos cartões** que ele governa, e
+  trocar de período não pisca: os cartões antigos esmaecem até os novos chegarem.
+- Cores: a linha da temperatura é um azul próprio (`--c-serie-temp`), não o
+  ciano de destaque — ciano e verde-água da ventoinha ficavam a ΔE 12 (abaixo
+  dos 15 que a visão normal precisa para distinguir duas séries); o azul fica a
+  ΔE 19. A luminária segue em âmbar, a ventoinha em verde-água.
+
 Os editores são folhas que sobem do rodapé (`components/Sheet.tsx`),
 renderizadas por portal no `body`: as telas animam com `transform`, e dentro
 delas um `position: fixed` ficaria preso, com os botões atrás da barra de

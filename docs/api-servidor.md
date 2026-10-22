@@ -72,7 +72,8 @@ Access.
 | `POST /api/commands` | enfileira um comando (`202`) |
 | `GET /api/settings` | configuração e `config_version` |
 | `PUT /api/settings` | grava, incrementa a versão e registra `settings.updated` |
-| `GET /api/report` | série do rollup horário |
+| `GET /api/history/fan` | temperatura minuto a minuto e acionamentos da ventoinha de um período (aba Ventoinha) |
+| `GET /api/report` | série do rollup horário (a aba Luminária usa para o tempo aceso) |
 | `GET /api/export/events.csv` | planilha dos registros, com os filtros de `/api/events` |
 | `GET /api/export/telemetry.csv` | planilha das medições de um período |
 
@@ -92,6 +93,52 @@ Access.
 Paginação por **cursor**, não por offset: a tabela recebe linhas o tempo todo, e
 com offset uma inserção entre duas páginas faria o usuário ver o mesmo evento
 duas vezes ou pular um.
+
+### `GET /api/history/fan`
+
+Alimenta a aba Ventoinha: a curva de temperatura e a tabela de acionamentos de
+um período, numa resposta só — os dois cartões sempre falam do mesmo intervalo.
+
+| Parâmetro | Valores | Nota |
+|---|---|---|
+| `range` | `24h` (padrão), `7d`, `30d` | qualquer outro → `400 invalid_range` |
+
+```jsonc
+{
+  "range": "24h",
+  "from": "2026-10-21T04:44:00.000Z", "to": "2026-10-22T04:44:20.000Z",
+  "bucket_s": 60,            // largura de cada ponto
+  "gap_s": 150,              // silêncio que interrompe a linha
+  "points": [[1792557840, 24.75, 24.70, 24.80], …],   // [início s Unix, média, mín, máx]
+  "temperature": { "min": 23.4, "min_at": "…", "avg": 25.9, "max": 29.0, "max_at": "…" },
+  "runs": [{ "id": 12, "started_at": "…", "ended_at": null, "duration_s": 1380,
+             "mode": "auto", "manual": false, "speed_max": 60,
+             "temp_start": 29.1, "temp_end": null, "temp_peak": 29.3, "temp_low": 28.4,
+             "approx": false }],
+  "runs_total": 3,
+  "summary": { "runs": 3, "on_seconds": 6720, "avg_duration_s": 2700, "avg_drop_c": 1.5 }
+}
+```
+
+- **Vem da telemetria bruta**, não do rollup horário: o rollup só tem uma média
+  por hora, e "qual era a temperatura às 14:35?" pede mais resolução. A
+  resolução de cada período (`HISTORY_SPEC`, `apps/server/src/api/history.ts`):
+  24 h a 1 min (≤ 1.440 pontos), 7 dias a 15 min, 30 dias a 1 h. A linha de
+  gravação é on-change + heartbeat de 60 s, então em 24 h cada minuto com
+  leitura é praticamente a leitura daquele instante. Os pontos de 7 e 30 dias
+  trazem mínima e máxima, para um pico curto não sumir na média.
+- **Só entra leitura fresca e plausível** (`temp_valid`, 10–45 °C). Uma leitura
+  velha repetida não é medição do instante.
+- **Buracos ficam buracos.** Intervalo sem nenhuma linha não vira ponto; o
+  cliente interrompe a linha quando a distância entre dois pontos passa de
+  `gap_s` (2,5 intervalos) em vez de ligar uma temperatura que ninguém mediu.
+- `temperature` são os extremos **exatos** do período (e o instante da
+  primeira vez que ocorreram), não os do intervalo agregado: "máxima 28,8 às
+  14:35" tem de bater com a linha.
+- `runs`: as rodadas que **tocam** o período, mais recentes primeiro, até 500
+  (`runs_total` diz quantas existem). Rodada aberta (`ended_at: null`) tem a
+  duração até agora, se o aquário está falando; senão, até a última vez em que
+  se viu a ventoinha ligada.
 
 ### `POST /api/commands`
 
@@ -171,7 +218,7 @@ sistema.
 |---|---|---|
 | Watchdog | 30 s | marca dispositivo offline (60 s de silêncio), notifica o celular só depois de `DEVICE_OFFLINE_ALERT_AFTER_S` (15 min), encerra comandos que passaram do prazo de vida |
 | Rollup | a cada hora cheia | agrega a hora que acabou de fechar em `telemetry_hourly` |
-| Manutenção | 1×/dia, 03:15 UTC | partições, rollup pendente, purga por tamanho |
+| Manutenção | 1×/dia, 03:15 UTC | partições, rollup pendente, poda dos acionamentos, purga por tamanho |
 
 Quando o dispositivo é dado como offline, **todos os componentes viram
 `unknown`** — manter `ok` com dado velho seria afirmar algo que não se sabe
@@ -191,6 +238,55 @@ e antes isso virava "luminária não respondeu".
 
 `component_status` só é regravado quando muda status, código ou início de
 anomalia — ou a cada 5 s, para o valor exibido não envelhecer.
+
+### Acionamentos da ventoinha (`fan_runs`, v1.4.0)
+
+Uma linha por **rodada**: de quando a ventoinha ligou a quando desligou, com a
+temperatura de partida, o pico, o mínimo e a de saída. O ingest a mantém POST a
+POST, olhando só a transição de `fan.on` contra o estado anterior
+(`ingest/fan-runs.ts`, função pura `planFanRun`):
+
+| Antes → agora | O que acontece |
+|---|---|
+| desligada → ligada | abre a rodada, com o horário do POST |
+| ligada → desligada | fecha, com o horário do POST e a temperatura de saída |
+| ligada → ligada | só atualiza pico, mínimo, potência e "alguém mexeu" — e só quando o ingest já grava uma linha de histórico (mudança ou heartbeat), não a cada POST |
+| ligada → ligada com `boot_id` novo | o PWM zera no reset: fecha a velha no instante do reinício (`uptime` atrás) e abre outra |
+
+**Silêncio.** Passados 5 min entre dois POSTs, o que aconteceu no meio é
+desconhecido. Uma rodada que abre depois disso tem o início no primeiro POST que
+a viu; uma que fecha depois disso termina na **última vez que se viu ligada**
+(um limite inferior, não "agora") e fica sem temperatura de saída. As duas
+levam `approx`, e o app marca com "≈".
+
+**Não cresce sem limite.** A manutenção diária apaga o que passa de
+`FAN_RUNS_RETENTION_DAYS` (90 dias) e o que excede `FAN_RUNS_MAX_ROWS` (20 mil
+por dispositivo) — nunca a rodada aberta. É o "dado antigo é sobrescrito" desta
+tabela: o Postgres reaproveita o espaço do que sai, então o tamanho fica estável
+em vez de acompanhar a idade da instalação. Não é isenta da purga como o
+`telemetry_hourly`: tem a poda por tempo dela.
+
+A migration 0013 cria a tabela (um índice parcial garante no máximo uma rodada
+aberta por aparelho) e **reconstrói uma vez** as rodadas que já estavam na
+telemetria bruta, para o histórico não nascer vazio no dia do deploy. Só lê
+`telemetry` e só escreve na tabela nova; a versão anterior da imagem a ignora.
+
+### Saúde: avisos que não ficam para sempre
+
+- **`system.event_overflow`** (eventos descartados) é um **episódio**. O
+  contador do firmware só zera no reinício, e contado como estado ele deixou o
+  Sistema "instável" por uma semana depois de uma queda de 21 h. Agora o status
+  vale por 1 h a partir da última vez que o contador subiu, e o aviso diz o que
+  houve — o buffer de 24 eventos encheu sem rede —, em vez de culpar um
+  componente em rajada.
+- **"Voltou ao normal" só depois de problema de verdade.** O watchdog zera o
+  status de todos os componentes para `unknown` quando o aquário fica mudo; a
+  volta de `unknown` para `ok` não é recuperação de nada (o `device.online` já
+  conta a volta) e não gera mais evento — eram onze por queda de contato, 880 de
+  9.600 eventos em oito dias.
+- **`ingest lento`**: um `warn` no log do servidor quando processar um POST
+  passa de 1 s. O firmware mede a latência inteira (rádio + servidor) e não
+  sabe dividir; isto separa as duas metades.
 
 ### Corpo com problema
 

@@ -264,7 +264,10 @@ Roda uma vez por dia, junto com o rollup (03:15):
    inatingível é um problema para o humano resolver, não para o job insistir.
 
 `telemetry_hourly`, `settings`, `commands`, `devices` e `component_status` são
-**isentos**. Somados dão poucos megabytes e são justamente o que dá valor ao
+**isentos**. `fan_runs` (v1.4.0) não é derrubada por partição, mas tem a poda
+por tempo e por linhas dela na mesma manutenção diária (90 dias, 20 mil linhas
+por dispositivo): são dezenas de linhas por dia no pior caso, e o espaço do que
+sai é reaproveitado. Somados dão poucos megabytes e são justamente o que dá valor ao
 histórico longo: a curva de temperatura do ano passado sobrevive mesmo depois
 de a telemetria bruta daquele mês ter sido descartada.
 
@@ -363,11 +366,22 @@ por componente e texto, dias agrupados, detalhes expansíveis, horário em
 `TZ_DISPLAY`, origem `device` e `server` marcadas. Daqui saem as planilhas
 (eventos e medições, CSV para o Excel em português).
 
-**Histórico de temperatura** — mora na tela da Ventoinha, onde a pergunta
-"como andou a água?" nasce: curva de 24 h, 7 ou 30 dias, mais luz acesa e
-ventoinha ligada por dia. Alimentado por `telemetry_hourly`, então continua
-funcionando sobre períodos cuja telemetria bruta já foi purgada, e só agrega a
-faixa habitual da água (16–33 °C) — o que sai dela é aviso nos Registros.
+**Histórico da ventoinha** (v1.4.0) — mora na tela da Ventoinha, onde a
+pergunta "como andou a água?" nasce. Um seletor de período (24 h, 7 ou 30
+dias) governa dois cartões: a **temperatura**, uma curva em que tocar, arrastar
+ou passar o mouse mostra o valor, o dia e a hora exatos daquele momento (1 min
+de resolução em 24 h), com os limites de liga e desliga da ventoinha, a faixa
+de quando ela esteve ligada e os silêncios do aquário como buracos; e os
+**acionamentos**, uma tabela com quando ligou, quando desligou, quanto tempo
+girou e o que fez com a temperatura (de onde partiu, onde chegou, o pico) —
+a resposta a "ela está dando conta?". Vem da telemetria bruta e da tabela
+`fan_runs`, não do rollup horário (ver `docs/api-servidor.md`,
+`GET /api/history/fan`). A faixa habitual da água (16–33 °C) já não esconde
+leitura: o que se plota é tudo o que é plausível (10–45 °C).
+
+**Tempo aceso** — mora na tela da Luminária: por hora nas últimas 24 h e por
+dia em 7 e 30 dias, com o horário programado como referência. Alimentado por
+`telemetry_hourly` (a hora em curso só entra depois de fechar).
 
 O desenho visual é o do app antigo, portado: paleta escura (`#070d1a` de fundo,
 `#4cc3f7` de acento, âmbar para luz, verde-água para ventoinha), cards com borda

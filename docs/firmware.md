@@ -206,6 +206,51 @@ cada elo disso:
   botão e ver o número mudar é o teste de bancada do pot, sem depender do
   servidor.
 
+### Vigia de rede, e o que ainda não se explica (2.1.2)
+
+Oito dias de produção depois da 2.1.1 (banco de 2026-10-14 a 22) mostraram que
+"o controlador cai" não é reinício: houve **um** reset em oito dias (power-on,
+18/10), nenhum brownout, watchdog ou panic. São 93 períodos sem contato, e em
+quase todos o Wi-Fi ficou **associado** o tempo todo — `wifi_reconnects` só
+subiu duas vezes no boot inteiro — com o POST expirando (`-11`, o teto de 8 s, é
+o valor mais repetido: p95 de 8.014 ms em sete dos nove dias; só numa madrugada,
+46% dos POSTs acima de 3 s). Mais um apagão de **21 h** em 19→20/10: o Wi-Fi
+tentou se associar 10.306 vezes (motivos 2, 9 e 15, de autenticação), religou o
+rádio de 10 em 10 minutos, abriu e fechou o AP de recuperação, e nada resolveu.
+A 2.1.2 não promete curar o rádio; ela encurta o estrago e deixa o próximo
+episódio explicável:
+
+- **Reassociar** (`net_watchdog.h`, `wifi_reassociate`). Com o Wi-Fi de pé e os
+  POSTs falhando por 2 min, desassocia e associa de novo — limpa a tabela ARP,
+  o lease e os sockets dos dois lados — e não repete em menos de 5 min
+  (`wifi.api_stall_reassoc`). A desassociação pedida não conta como queda.
+- **Reiniciar como último recurso.** Sem nenhum POST aceito por 2 h, e **só com
+  a luminária apagada**: reiniciar liga e desliga o relé, e o controlador da
+  luminária troca de padrão (branca/azul/verde/vermelha) a cada liga-e-desliga
+  rápido. O prazo dobra a cada reinício seguido sem recuperação (2, 4, 8, 16 e 24
+  h) e a sequência, guardada na NVS, volta a zero com 30 min de contato firme. A
+  volta registra `system.net_watchdog_reboot`. Com a luz acesa o vigia espera
+  ela apagar; o apagão de 21 h (começou às 15:33) teria acabado por volta das
+  17:30.
+- **Resumo da queda com o que faltava.** `api.outage_summary` agora traz o
+  código de erro das falhas que não são timeout nem conexão (`-8` é falta de
+  RAM) e o **mínimo de memória livre** do período.
+- **`system.heap_low_water`.** O `min_free_heap` de 756 bytes visto em produção
+  não dizia quando nem por quê. Um evento por boot quando o mínimo cai de 16 KB,
+  com o estado do momento (AP de recuperação, Wi-Fi, fila de eventos).
+- **Autodiagnóstico do potenciômetro.** Os extremos (0 e 4095) são posições do
+  botão, não defeito, e o servidor já os tratava assim: o diagnóstico marcava
+  "degradado" com o botão no mínimo. Agora diz "no mínimo, onde a ventoinha
+  desliga pelo botão; se ele não está no mínimo, confira o fio do cursor".
+
+**O que os dados não explicam, e não vamos fingir que sim:** a luminária. As 33
+trocas de oito dias batem com o horário e com o botão; só `light_set` escreve
+no GPIO23, e cada mudança vira evento. Um liga-e-desliga rápido que o firmware
+não vê só pode estar fora dele: queda de energia na tomada, ou o SSR (a corrente
+de fuga dele com a carga desligada pode manter o controlador da luminária
+meio acordado e contar um clique). A 2.1.2 só garante que **o firmware não
+reinicia com a luz acesa**.
+
 ### O limite de refeições do alimentador (2.1.0)
 
 O módulo do alimentador conta as refeições de 24 h — agenda, botão e app — e
@@ -308,8 +353,8 @@ Na bancada, `/status` mostra `feeder.present`: falso com o conector vazio.
 ## Verificado
 
 - **Compila** contra ESP32 core 3.3.8 e ArduinoJson 7.4.3, sem nenhum aviso nos
-  arquivos do projeto mesmo com `--warnings all`: 1.140.578 bytes (87% do
-  flash) na 2.1.0, 57 KB de RAM global (17%).
+  arquivos do projeto mesmo com `--warnings all`: 1.160.846 bytes (88% do
+  flash) na 2.1.2, 58 KB de RAM global (18%).
 - **Os quatro formatos de corpo** que o firmware emite (normal, sensor ausente,
   RTC sumido, com `ack` de recusa e eventos) validam contra
   `telemetryRequestSchema`. Entre 391 e 777 bytes.

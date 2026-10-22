@@ -128,6 +128,7 @@ export default function Page() {
 
         <section className={`screen ${aba === "luminaria" ? "active" : ""}`}>
           <Light
+            ativa={aba === "luminaria"}
             data={data}
             feedback={feedback}
             onSend={send}
@@ -138,6 +139,7 @@ export default function Page() {
 
         <section className={`screen ${aba === "ventoinha" ? "active" : ""}`}>
           <Fan
+            ativa={aba === "ventoinha"}
             data={data}
             feedback={feedback}
             onSend={send}

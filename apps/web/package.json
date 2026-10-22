@@ -7,7 +7,8 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack && node scripts/stamp-version.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test test/*.test.ts"
   },
   "dependencies": {
     "@bettacare/contract": "workspace:*",

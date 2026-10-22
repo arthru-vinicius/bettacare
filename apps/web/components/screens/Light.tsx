@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CommandStatus } from "@/components/CommandStatus";
 import { IconBulb, IconPencil } from "@/components/icons";
 import { SettingsStatus } from "@/components/SettingsStatus";
+import { HistoricoLuz } from "@/components/historico/HistoricoLuz";
 import { LightScheduleSheet } from "@/components/sheets/LightScheduleSheet";
 import type { CommandFeedback, SettingsArea, SettingsFeedback } from "@/lib/useDevice";
 
@@ -18,12 +19,15 @@ const ORIGEM: Record<string, string> = {
 };
 
 export function Light({
+  ativa,
   data,
   feedback,
   onSend,
   settingsFeedback,
   onSaveSettings,
 }: {
+  /** A aba está à vista? O histórico só busca dados enquanto está. */
+  ativa: boolean;
   data: OverviewResponse | null;
   feedback: CommandFeedback | null;
   onSend: (a: CommandAction) => void;
@@ -147,6 +151,8 @@ export function Light({
           </span>
         </div>
       ) : null}
+
+      <HistoricoLuz ativo={ativa} config={data?.config ?? null} />
 
       {editando && data?.config ? (
         <LightScheduleSheet

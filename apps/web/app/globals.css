@@ -2076,3 +2076,598 @@ input[type="range"]:disabled::-webkit-slider-thumb {
   outline: 2px solid var(--c-accent);
   outline-offset: 2px;
 }
+
+/* ── Histórico da ventoinha e da luminária ────────────────────────────────
+ *
+ * Um seletor de período por tela, acima dos cartões que ele governa. Cor segue
+ * a entidade: linha da temperatura em azul (--c-serie-temp), ventoinha em
+ * verde-água, luminária em âmbar. O azul da linha não é o ciano de destaque do
+ * app de propósito: ciano e verde-água ficavam a ΔE 12 um do outro (abaixo dos
+ * 15 que um leitor com visão normal precisa para distinguir duas séries); o
+ * azul fica a ΔE 19, e também distingue na deuteranopia e na protanopia.
+ */
+
+:root {
+  --c-serie-temp: #6ea8ff;
+}
+
+.so-leitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.hist-filtro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 22px 0 10px;
+}
+
+.hist-filtro .chart-title {
+  margin: 0;
+}
+
+.hist-card {
+  padding: 16px 12px 14px;
+}
+
+.hist-card .chart-nota {
+  color: var(--c-text-2);
+}
+
+/* A leitura fica acima do gráfico: o dedo, que cobre o ponto, nunca cobre o número. */
+
+.hist-leitura {
+  min-height: 70px;
+  margin: 0 2px 8px;
+}
+
+.hist-leitura-topo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hist-leitura-valor {
+  font-size: 2.1rem;
+  font-weight: 300;
+  letter-spacing: -1px;
+  line-height: 1.05;
+  color: var(--c-text-1);
+}
+
+.hist-leitura-valor .unid {
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--c-text-2);
+}
+
+.hist-leitura-valor.vazio {
+  font-size: 1.3rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--c-text-2);
+}
+
+.hist-leitura-quando {
+  font-size: 0.76rem;
+  color: var(--c-text-2);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.hist-leitura-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 24px;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--c-text-2);
+}
+
+.hist-limpar {
+  margin-left: auto;
+  padding: 3px 11px;
+  border-radius: 99px;
+  border: 1px solid var(--c-border);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--c-text-2);
+}
+
+.hist-limpar:focus-visible,
+button.hist-stat:focus-visible,
+.hist-tabela summary:focus-visible,
+.hist-alvo:focus-visible,
+.tabela-acionamentos tr.acionamento:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+/* O gráfico. A rolagem vertical da página segue valendo por cima dele. */
+
+.hist-grafico-caixa {
+  position: relative;
+  width: 100%;
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.hist-svg {
+  display: block;
+  overflow: visible;
+}
+
+.hist-alvo {
+  position: absolute;
+  cursor: crosshair;
+  touch-action: pan-y;
+  border-radius: 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.g-grade {
+  stroke: var(--c-border);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.g-rotulo {
+  fill: var(--c-text-2);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* O rótulo de um limite fica sobre a linha: um contorno da cor do cartão o mantém legível. */
+.g-rotulo-limite {
+  stroke: var(--c-card);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+
+/* Fronteiras de dia: hairline, mais discreta que a grade horizontal. */
+.g-grade-v {
+  stroke: var(--c-border);
+  stroke-width: 1;
+  opacity: 0.55;
+  shape-rendering: crispEdges;
+}
+
+.g-linha {
+  fill: none;
+  stroke: var(--c-serie-temp);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.g-faixa {
+  fill: var(--c-serie-temp);
+  opacity: 0.14;
+  stroke: none;
+}
+
+.g-ponto-solto {
+  fill: var(--c-serie-temp);
+}
+
+/* Referência, não grade: tracejada de propósito, para não ser lida como dado. */
+.g-limite {
+  stroke: var(--c-text-2);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  opacity: 0.7;
+}
+
+.g-buraco {
+  fill: rgba(216, 229, 245, 0.05);
+}
+
+.g-selecao {
+  fill: var(--c-on-dim);
+}
+
+.g-trilho {
+  fill: rgba(37, 58, 82, 0.4);
+}
+
+.g-ventoinha {
+  fill: var(--c-on);
+}
+
+.g-ventoinha.manual {
+  opacity: 0.55;
+}
+
+.g-ventoinha.sel {
+  stroke: var(--c-text-1);
+  stroke-width: 1.5;
+}
+
+.g-extremo,
+.g-marcador {
+  fill: var(--c-serie-temp);
+  stroke: var(--c-card);
+  stroke-width: 2;
+}
+
+.g-cursor {
+  stroke: var(--c-text-2);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.g-cursor.buraco {
+  stroke-dasharray: 3 3;
+}
+
+.g-barra {
+  fill: var(--c-amber);
+  opacity: 0.8;
+}
+
+.g-barra.sel {
+  opacity: 1;
+}
+
+.g-barra.zero {
+  fill: var(--c-off);
+  opacity: 1;
+}
+
+/* Legenda: a chave imita a marca (linha, bloco, tracejado). */
+
+.hist-legenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 6px 2px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.7rem;
+  color: var(--c-text-2);
+}
+
+.hist-legenda li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chave {
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.chave-linha {
+  width: 16px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--c-serie-temp);
+}
+
+.chave-fan {
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--c-on);
+}
+
+.chave-limite {
+  width: 16px;
+  height: 0;
+  border-top: 1px dashed var(--c-text-2);
+}
+
+.chave-buraco {
+  width: 12px;
+  height: 10px;
+  border-radius: 2px;
+  background: rgba(216, 229, 245, 0.08);
+  border: 1px solid var(--c-border);
+}
+
+/* Mínima, média e máxima: as duas pontas levam o cursor ao momento em que aconteceram. */
+
+.hist-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.hist-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 66px;
+  padding: 8px 4px;
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  text-align: center;
+}
+
+button.hist-stat {
+  cursor: pointer;
+}
+
+button.hist-stat:active {
+  background: rgba(76, 195, 247, 0.08);
+}
+
+.hist-stat .stat-val {
+  font-size: 1.1rem;
+}
+
+.hist-stat .stat-val small {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--c-text-2);
+}
+
+.stat-quando {
+  font-size: 0.64rem;
+  line-height: 1.25;
+  color: var(--c-text-2);
+}
+
+/* A mesma série em tabela, para quem não enxerga ou não usa o gráfico. */
+
+.hist-tabela {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--c-border);
+}
+
+.hist-tabela summary {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--c-text-2);
+  cursor: pointer;
+  list-style: none;
+}
+
+.hist-tabela summary::-webkit-details-marker {
+  display: none;
+}
+
+.hist-tabela summary::before {
+  content: "▸";
+  margin-right: 7px;
+}
+
+.hist-tabela[open] summary::before {
+  content: "▾";
+}
+
+.hist-tabela table {
+  width: 100%;
+  margin-top: 4px;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.hist-tabela th,
+.hist-tabela td {
+  padding: 6px 4px;
+  text-align: right;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.hist-tabela thead th {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--c-text-2);
+}
+
+.hist-tabela th:first-child {
+  text-align: left;
+}
+
+.hist-tabela tbody th {
+  font-weight: 500;
+  color: var(--c-text-1);
+}
+
+/* Acionamentos: números-resumo e a tabela de rodadas. */
+
+.hist-kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+@media (min-width: 560px) {
+  .hist-kpis {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.kpi {
+  padding: 10px;
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+}
+
+.kpi-val {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--c-text-1);
+}
+
+.kpi-val small {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--c-text-2);
+}
+
+.kpi-lbl {
+  margin-top: 4px;
+  font-size: 0.66rem;
+  line-height: 1.3;
+  color: var(--c-text-2);
+}
+
+.hist-vazio {
+  padding: 22px 12px;
+  line-height: 1.5;
+  color: var(--c-text-2);
+}
+
+.hist-tabela-rolagem {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tabela-acionamentos {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabela-acionamentos thead th {
+  padding: 0 4px 8px;
+  text-align: left;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--c-text-2);
+}
+
+.tabela-acionamentos tr.dia th {
+  padding: 12px 4px 6px;
+  text-align: left;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--c-text-2);
+}
+
+.tabela-acionamentos tr.acionamento {
+  cursor: pointer;
+  border-top: 1px solid var(--c-border);
+}
+
+.tabela-acionamentos td {
+  padding: 9px 4px;
+  vertical-align: top;
+}
+
+.tabela-acionamentos tr.acionamento:hover td {
+  background: rgba(76, 195, 247, 0.04);
+}
+
+.tabela-acionamentos tr.acionamento.sel td {
+  background: var(--c-on-dim);
+}
+
+.col-hora,
+.col-tempo {
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--c-text-1);
+}
+
+/* A etiqueta vai embaixo da hora: ao lado, ela alargava a coluna e empurrava a temperatura para fora da tela. */
+.col-hora .chip {
+  display: flex;
+  width: fit-content;
+  margin: 3px 0 0;
+}
+
+.ao-vivo {
+  font-size: 0.62rem;
+  color: var(--c-text-2);
+}
+
+.aprox,
+.mais-um {
+  font-weight: 500;
+  color: var(--c-text-2);
+}
+
+.mais-um {
+  font-size: 0.62rem;
+}
+
+.col-temp .temp-par {
+  white-space: nowrap;
+  color: var(--c-text-1);
+}
+
+.col-temp small {
+  color: var(--c-text-2);
+}
+
+.temp-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 4px;
+}
+
+.pico {
+  font-size: 0.66rem;
+  color: var(--c-text-2);
+}
+
+/* Etiquetas: sempre com texto ou símbolo junto da cor — nunca só a cor. */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.chip-fan,
+.chip-bom {
+  background: var(--c-on-dim);
+  color: var(--c-on);
+}
+
+.chip-atencao {
+  background: var(--c-amber-dim);
+  color: var(--c-amber);
+}
+
+.chip-neutro,
+.chip-manual {
+  background: rgba(37, 58, 82, 0.45);
+  color: var(--c-text-2);
+}

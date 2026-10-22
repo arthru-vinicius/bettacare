@@ -93,3 +93,31 @@ export function formatDuration(minutos: number): string {
   const m = minutos % 60;
   return m === 0 ? `${h} h` : `${h} h ${m} min`;
 }
+
+/** "45 s", "36 min", "1 h 05 min" — a duração de uma rodada, vinda em segundos. */
+export function formatDurationS(segundos: number): string {
+  const s = Math.max(0, Math.round(segundos));
+  if (s < 60) return `${s} s`;
+  const min = Math.round(s / 60);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h} h` : `${h} h ${String(m).padStart(2, "0")} min`;
+}
+
+const SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+/** "Hoje", "Ontem" ou "qua, 22 out" — o dia de um instante, no relógio local. */
+export function formatDia(d: Date): string {
+  const hoje = new Date();
+  const ontem = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1);
+  if (d.toDateString() === hoje.toDateString()) return "Hoje";
+  if (d.toDateString() === ontem.toDateString()) return "Ontem";
+  return `${SEMANA[d.getDay()]}, ${d.getDate()} ${MESES[d.getMonth()]}`;
+}
+
+/** "14:35" — hora e minuto, 24 h, no relógio local. */
+export function formatHora(d: Date): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}

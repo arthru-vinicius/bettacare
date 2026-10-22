@@ -7,7 +7,7 @@ import { CommandStatus } from "@/components/CommandStatus";
 import { IconAuto, IconFan, IconPencil, IconPower } from "@/components/icons";
 import { SettingsStatus } from "@/components/SettingsStatus";
 import { FanLimitsSheet } from "@/components/sheets/FanLimitsSheet";
-import { TempHistory } from "@/components/TempHistory";
+import { HistoricoVentoinha } from "@/components/historico/HistoricoVentoinha";
 import { formatInt, formatTemp } from "@/lib/format";
 import type { CommandFeedback, SettingsArea, SettingsFeedback } from "@/lib/useDevice";
 
@@ -46,12 +46,15 @@ interface Otimista {
 const OTIMISTA_MAX_MS = 15_000;
 
 export function Fan({
+  ativa,
   data,
   feedback,
   onSend,
   settingsFeedback,
   onSaveSettings,
 }: {
+  /** A aba está à vista? O histórico só busca dados enquanto está. */
+  ativa: boolean;
   data: OverviewResponse | null;
   feedback: CommandFeedback | null;
   onSend: (a: CommandAction) => void;
@@ -261,7 +264,12 @@ export function Fan({
         </div>
       ) : null}
 
-      <TempHistory />
+      <HistoricoVentoinha
+        ativo={ativa}
+        config={data?.config ?? null}
+        online={online}
+        celsiusAgora={s?.temperature.valid ? s.temperature.celsius : null}
+      />
 
       {editando && data?.config ? (
         <FanLimitsSheet

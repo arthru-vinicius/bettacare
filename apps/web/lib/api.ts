@@ -3,6 +3,8 @@ import type {
   CommandItem,
   DeviceConfig,
   EventsResponse,
+  FanHistoryResponse,
+  HistoryRange,
   OverviewResponse,
   ReportPoint,
 } from "@bettacare/contract";
@@ -144,12 +146,24 @@ export async function fetchCommands(
   return r.items;
 }
 
+/**
+ * Temperatura e rodadas da ventoinha de um período — a aba Ventoinha. Vem da
+ * telemetria bruta, com a resolução de cada período (ver `HISTORY_SPEC` no
+ * servidor), e não do rollup horário de `fetchReport`.
+ */
+export function fetchFanHistory(
+  range: HistoryRange,
+  signal?: AbortSignal,
+): Promise<FanHistoryResponse> {
+  return get<FanHistoryResponse>(`/api/history/fan?range=${range}`, signal);
+}
+
+/** Rollup horário (`telemetry_hourly`) de um intervalo — o tempo de luz acesa por hora. */
 export async function fetchReport(
-  days: number,
+  from: Date,
+  to: Date,
   signal?: AbortSignal,
 ): Promise<ReportPoint[]> {
-  const to = new Date();
-  const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
   const r = await get<{ items: ReportPoint[] }>(
     `/api/report?from=${from.toISOString()}&to=${to.toISOString()}`,
     signal,

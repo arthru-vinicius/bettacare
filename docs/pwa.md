@@ -85,6 +85,29 @@ e a folha inteira cabe em menos que a configuração da alternativa.
 
 ---
 
+## Ícones e tela de abertura
+
+Duas artes, dois papéis (`apps/web/assets/`): o **lançador** (ilustração de
+contorno limpo) é o ícone pequeno — gaveta de apps, tela inicial, canto do app;
+a **arte de carregamento** (fotorrealista) só aparece grande — na abertura do
+Android e na tela de carregamento do próprio app (`Carregando.tsx`).
+
+A abertura do Android é o detalhe que engana: o manifest não tem campo de
+splash, e o Chrome a monta com `background_color` e um dos `icons`, preferindo
+os `maskable` — o mesmo grupo de onde sai o ícone da gaveta. Até a v1.4.0 o
+único maskable era o do lançador, que aparecia grande e cortado na abertura.
+Agora são dois, separados pelo tamanho que cada uso procura (83dp na gaveta,
+128dp na abertura): o lançador em 332 px e a arte de carregamento em 512 px. A
+gaveta fica sempre com o lançador; a abertura mostra a arte de carregamento em
+telas de densidade 2,625 ou mais (o padrão dos celulares atuais) e, abaixo
+disso, o lançador, como antes. A conta está em `scripts/gerar-icones.py`.
+
+O Android só atualiza os ícones de um app já instalado quando o Chrome revisa
+o manifest (no máximo uma vez por dia, ao abrir o app); para ver na hora,
+desinstale e instale o app de novo.
+
+---
+
 ## Os tipos vêm do contrato
 
 `packages/contract/src/api.ts` define também a superfície do navegador, não só a

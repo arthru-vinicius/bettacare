@@ -30,7 +30,23 @@ export const EVENT_CODES = {
     comp: "system",
     sev: "warn",
     label: "Eventos descartados por excesso",
-    hint: "Algum componente está gerando eventos em rajada — veja qual está em falha.",
+    // Quase sempre é consequência de uma queda de rede, não de um componente:
+    // sem POST aceito, o buffer de 24 eventos enche. Em produção (2026-10) o
+    // texto antigo ("algum componente está gerando eventos em rajada") mandava
+    // procurar uma falha que não existia.
+    hint: "O aquário ficou um tempo sem falar com o servidor e o buffer de eventos encheu; alguns registros dessa janela se perderam. Costuma ser sinal de queda de Wi-Fi, não de componente com defeito.",
+  },
+  "system.net_watchdog_reboot": {
+    comp: "system",
+    sev: "warn",
+    label: "Reiniciado pelo vigia de rede",
+    hint: "Horas sem falar com o servidor e a luminária apagada: o firmware reiniciou por conta própria, o último recurso. A luminária só é reiniciada apagada, porque o controlador dela troca de padrão a cada liga-e-desliga. Se repetir, o problema está na rede (roteador, canal, sinal), não no aquário.",
+  },
+  "system.heap_low_water": {
+    comp: "system",
+    sev: "warn",
+    label: "Memória livre chegou a quase zero",
+    hint: "A mensagem diz o estado do momento (AP de recuperação, Wi-Fi, fila de eventos). Memória nesse nível faz conexões e POSTs falharem. Se repetir, grave o firmware de debug e olhe /debug.",
   },
   "system.low_memory": {
     comp: "system",
@@ -148,6 +164,12 @@ export const EVENT_CODES = {
     sev: "warn",
     label: "Sinal de Wi-Fi fraco",
     hint: "RSSI abaixo de -80 dBm por mais de um minuto. Aproxime o roteador ou o dispositivo, ou fixe o ponto de acesso mais próximo em /wifi-setup.",
+  },
+  "wifi.api_stall_reassoc": {
+    comp: "wifi",
+    sev: "warn",
+    label: "Wi-Fi reassociado: servidor sem resposta",
+    hint: "O Wi-Fi estava associado, mas o servidor não respondia havia 2 minutos. O firmware desassocia e associa de novo — limpa o estado do ponto de acesso e da pilha de rede. O controle do aquário não é afetado.",
   },
   "wifi.radio_restart": {
     comp: "wifi",

@@ -13,7 +13,7 @@ static bool              _overflow = false;
 static uint16_t          _dropped_total = 0;
 static SemaphoreHandle_t _mutex    = nullptr;
 
-/** Quantas entradas recentes a dedup varre (UPGRADE/03, F9). */
+/** Quantas entradas recentes a dedup varre. */
 static const uint8_t DEDUP_SCAN_BACK = 4;
 
 static const char* const SEV_NAMES[] = {"debug", "info", "warn", "error", "fatal"};
@@ -58,8 +58,8 @@ void event_log(EventSeverity sev, EventComponent comp, const char* code,
 
   /**
    * Deduplicação: mesmo componente e código numa das últimas
-   * `DEDUP_SCAN_BACK` entradas vira contador, não linha nova (UPGRADE/03,
-   * F9). Comparar só com a última entrada colapsava apenas repetição
+   * `DEDUP_SCAN_BACK` entradas vira contador, não linha nova.
+   * Comparar só com a última entrada colapsava apenas repetição
    * imediata — um componente oscilando raramente repete: ele alterna
    * (`temp.sensor_lost`, `temp.sensor_found`, `temp.sensor_lost`…), e cada
    * alternância quebrava a dedupe e enchia o buffer de 24 posições em

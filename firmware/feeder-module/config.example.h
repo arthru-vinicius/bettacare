@@ -10,7 +10,7 @@
 // de fábrica, limites, tempos dos motores) fica em params.h, versionado; aqui
 // só o que é deste módulo em particular: identidade, rede, senha e pinos.
 // Bancada e gravação: README.md desta pasta. Montagem:
-// docs/pinagem-alimentador-modulo.md.
+// docs/hardware/modulo-alimentador.md.
 //
 // Placa (arduino-cli): esp32:esp32:esp32c3:CDCOnBoot=cdc
 // Bibliotecas (Arduino Library Manager):
@@ -48,7 +48,7 @@
 // #define NTP_SERVER_2        "pool.ntp.org"
 // #define CLOCK_UTC_OFFSET_S  (-3L * 3600L)
 
-// --- Pinagem (docs/pinagem-alimentador-modulo.md) ------------------------------
+// --- Pinagem (docs/hardware/modulo-alimentador.md) ------------------------------
 // Fora daqui: GPIO2, GPIO8 e GPIO9 são strapping (o 8 é o LED da placa, o 9 o
 // BOOT), o GPIO11 alimenta a flash e o GPIO18/19 é o USB. O GPIO2 e o GPIO9
 // ficam livres.

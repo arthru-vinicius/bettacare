@@ -97,7 +97,7 @@ static bool _auth_enabled() {
 }
 
 /**
- * Compara em tempo constante (UPGRADE/03, F14) — o mesmo cuidado que o
+ * Compara em tempo constante — o mesmo cuidado que o
  * servidor já tem no ingest (`ingest/auth.ts`, SHA-256 dos dois lados antes
  * do `timingSafeEqual`). Aqui é a API local do próprio ESP32, numa LAN
  * doméstica, então a severidade é baixa; mas não havia motivo para a

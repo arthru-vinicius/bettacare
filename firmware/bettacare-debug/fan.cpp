@@ -64,10 +64,10 @@ static bool              _stall_reported = false;
 /** Tempo com PWM e sem rotação antes de acusar defeito. */
 static const unsigned long STALL_MS = 5000;
 /**
- * Teto físico de RPM (UPGRADE/05, C1). O mesmo teto do contrato
+ * Teto físico de RPM. O mesmo teto do contrato
  * (`fanStateSchema.rpm.max`) — se o tacômetro contar mais que isto, não é
- * rotação real, é ruído na linha (ver UPGRADE/02 §4, sobre o pull-up que
- * falta). Sem grampear aqui, o valor implausível derrubaria o POST inteiro no
+ * rotação real, é ruído na linha (pull-up
+ * ausente). Sem grampear aqui, o valor implausível derrubaria o POST inteiro no
  * servidor antes da correção de tolerância entrar em ação.
  */
 static const int FAN_RPM_MAX = 20000;
@@ -112,7 +112,7 @@ static void _set_fan_power(bool on) {
 static void _apply_speed(int pct) {
   pct = constrain(pct, 0, 100);
   _speed_pct = pct;
-  // O buffer MOSFET do PWM (pinagem-e-montagem-esp32.md §7, caso de 5V)
+  // O buffer MOSFET do PWM (docs/hardware/controlador-principal.md §7, caso de 5V)
   // inverte o sinal: GPIO em alto liga o MOSFET, que puxa a linha da
   // ventoinha pra baixo — o oposto do dreno aberto direto. Sem o
   // complemento aqui, 100% comandado chega como 0% na ventoinha (ela gira no
@@ -280,7 +280,7 @@ void fan_update() {
 
     // Fisicamente impossível vira ruído contado, não rotação real — grampeia
     // e avisa, em vez de deixar o número seguir para um POST que o servidor
-    // teria de rejeitar inteiro (UPGRADE/05, C1).
+    // teria de rejeitar inteiro.
     if (rpm_bruto > FAN_RPM_MAX) {
       event_log(SEV_WARN, COMP_FAN, "fan.tach_implausible",
                 "Tacometro contou %d rpm, acima do fisicamente possivel; corrigido para %d",
@@ -314,7 +314,7 @@ void fan_update() {
     }
 
     // Confere se o pino de corte de energia ainda obedece o que mandamos
-    // escrever (UPGRADE/07 — o GPIO27 original queimou num curto gate/dreno
+    // escrever (o GPIO27 original queimou num curto gate/dreno
     // do AO3400 e ficou dias dando sintoma confuso de "ventoinha não desliga"
     // antes de alguém medir o pino direto com multímetro). Um pino morto
     // normalmente fica preso num nível só, então ler de volta aqui pega isso
@@ -376,7 +376,7 @@ void fan_update() {
         // Sem `_disarm_pot()`: quem desligou foi o pot, e ele segue no comando.
         _enter_manual_off();
         _pot_log_pending = false;
-        // Código próprio da família `pot.*` (UPGRADE/03, F12): antes usava
+        // Código próprio da família `pot.*`: antes usava
         // `fan.off`, e quem filtrasse por componente `pot` via `code=fan.*`,
         // ou agregasse por código, misturava ação do potenciômetro com ação
         // da ventoinha automática.

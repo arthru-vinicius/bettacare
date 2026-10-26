@@ -38,7 +38,7 @@ const Calibration&  app_calibration();
 const History&      app_history();
 uint8_t             app_meals_24h();
 /**
- * Algo para o Arthur ver, até um toque no botão: a última refeição terminou
+ * Algo para o usuário ver, até um toque no botão: a última refeição terminou
  * com SENSOR ou VAZIO, ou uma refeição da agenda não saiu (perdida, limite,
  * sem calibração).
  */

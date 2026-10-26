@@ -17,7 +17,7 @@
 /**
  * 16 KB de pilha. O caminho mais fundo é
  * `HTTPClient::POST` → `WiFiClient` → LWIP, mais a serialização do ArduinoJson
- * — e, desde o diagnóstico do controlador (UPGRADE/03, F7), `_build_body()`
+ * — e, desde o diagnóstico do controlador, `_build_body()`
  * também empilha um `DiagnosticReport` inteiro (~1,6 KB, 12 `DiagnosticCheck`)
  * em cima do `LogEvent eventos[24]` (~4 KB) que já existia, tudo na mesma
  * moldura porque o compilador inlina `_build_body()` em `api_client_post()`.
@@ -31,7 +31,7 @@ static const UBaseType_t NET_TASK_PRIORITY = 2;
 static const BaseType_t  NET_TASK_CORE = 0;
 
 /**
- * Prazo do watchdog desta task (UPGRADE/03, F11). Generoso de propósito: cobre
+ * Prazo do watchdog desta task. Generoso de propósito: cobre
  * o pior POST (~16 s com os prazos da 2.1.1, mais a repetição numa conexão
  * nova) com folga larga, então só dispara se a task
  * realmente travar — dentro do `HTTPClient`, por exemplo, um cenário que o
@@ -74,7 +74,7 @@ static void _init_task_watchdog() {
   // ESP_ERR_INVALID_STATE (o "TWDT already initialized" do log de boot), e a
   // versão anterior só ignorava o erro e inscrevia a task: o prazo de 60 s
   // nunca valia, ela ficava vigiada com 5 s. Um NTP lento já bastava para
-  // reiniciar o chip, e sem internet virava loop de reboot (UPGRADE/07).
+  // reiniciar o chip, e sem internet virava loop de reboot.
   esp_err_t err = esp_task_wdt_init(&cfg);
   if (err == ESP_ERR_INVALID_STATE) err = esp_task_wdt_reconfigure(&cfg);
   if (err != ESP_OK) {
@@ -117,7 +117,7 @@ static void _net_loop(void*) {
 
     /**
      * NTP: primeira sincronização, ressincronização diária, e imediatamente
-     * se o RTC perder a hora (UPGRADE/03, F3).
+     * se o RTC perder a hora.
      *
      * Antes disto, `_ntp_synced` virava `true` no primeiro sucesso e nunca
      * mais voltava a `false`. Enquanto o DS3231 está bem isso não incomoda —
@@ -140,7 +140,7 @@ static void _net_loop(void*) {
     uint32_t agora = millis();
 
     /**
-     * Confirmação na hora (UPGRADE/07). Um comando executado esperava o
+     * Confirmação na hora. Um comando executado esperava o
      * próximo ciclo para ter o `ack` enviado — até um intervalo inteiro a mais
      * entre o toque no app e o "confirmado". Agora uma confirmação nova
      * antecipa o POST, que leva junto o estado já mudado.
@@ -225,7 +225,7 @@ static void _net_loop(void*) {
       proximo_post_ms = agora + intervalo;
 
       /**
-       * Reboot pedido pelo servidor (UPGRADE/03, F2): só reinicia depois de um
+       * Reboot pedido pelo servidor: só reinicia depois de um
        * POST bem-sucedido — é ele que leva o `ack` do `device.reboot`, que só
        * sai do buffer após a confirmação de envio (ver F1 em `api_client.cpp`).
        * Reiniciar antes fazia o comando aparecer como "expirado" quase sempre,

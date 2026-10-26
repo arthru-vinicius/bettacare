@@ -92,7 +92,7 @@
 // DS3231SN usa o I2C padrão do ESP32: SDA = GPIO 21, SCL = GPIO 22
 
 // --- Módulo opcional de alimentação de precisão (UART2) ----------------------
-// Ver pinagem-e-montagem-esp32.md §8 e pinagem-alimentador-modulo.md.
+// Ver docs/hardware/controlador-principal.md §8 e docs/hardware/modulo-alimentador.md.
 // Não são os pinos "padrão" 17/16 da UART2 porque o 17 já é o PWM da
 // ventoinha — ver a mesma nota no doc de pinagem.
 #define PIN_FEEDER_TX     4   // TXD2 — para o RX do módulo

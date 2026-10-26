@@ -78,7 +78,7 @@ static bool _bcd_valid(uint8_t v, uint8_t max_dezena) {
 /**
  * Lê hora e minuto direto dos registradores do DS3231. Só com `_i2c_mutex`.
  *
- * Não usa `RTC_DS3231::now()` de propósito (UPGRADE/07): ele ignora o retorno
+ * Não usa `RTC_DS3231::now()` de propósito: ele ignora o retorno
  * da transação I²C e, quando ela falha, decodifica como hora o que havia na
  * pilha — foi assim que "40:08" chegou ao cache e carimbou os eventos. Pior
  * que o valor impossível é o lixo com cara de hora válida, que nenhuma

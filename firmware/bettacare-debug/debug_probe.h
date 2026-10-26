@@ -5,7 +5,7 @@
 /**
  * Instrumentação de investigação — só existe no firmware de debug.
  *
- * Nasceu para achar o relé que mudava de estado sem comando (UPGRADE/07): um
+ * Nasceu para achar o relé que mudava de estado sem comando: um
  * anel de eventos com carimbo de tempo, escrito de três contextos (ISR do
  * botão, loop de controle, task de rede) e lido pelo endpoint `/debug`, mais
  * chaves de runtime que ligam e desligam subsistemas sem regravar o firmware —

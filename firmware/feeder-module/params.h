@@ -7,7 +7,7 @@
  * doseador) e os testes de host incluem só isto. Pinos e credenciais ficam no
  * `config.h`.
  *
- * Os números de segurança do peixe saíram de decisões do Arthur (2026-10-02):
+ * Os números de segurança do peixe saíram de decisões de projeto (2026-10-02):
  * no máximo 3 refeições em 24 h, recuperar uma refeição perdida até 4 h de
  * atraso, e alimentar contando pelo servo se o sensor falhar.
  */

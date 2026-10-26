@@ -71,7 +71,7 @@ struct DeviceSnapshot {
   uint32_t      uptime_ms;
 
   // Diagnóstico do controlador, acrescentado na rodada de confiabilidade de
-  // 2026-08-21 (UPGRADE/03, F7). Só os campos que nascem no núcleo de
+  // 2026-08-21. Só os campos que nascem no núcleo de
   // controle; heap, motivo do reset e latência do POST são medidos
   // diretamente pela task de rede em `api_client.cpp`, que já roda no núcleo
   // certo para isso.
@@ -183,7 +183,7 @@ DedupeVerdict app_state_receive_command(uint32_t id);
 /**
  * Copia até `max` confirmações pendentes **sem removê-las** — para montar o
  * corpo do POST. Se a requisição falhar, elas continuam lá para o próximo
- * ciclo tentar de novo (UPGRADE/03, F1): um `ack` perdido faz a interface
+ * ciclo tentar de novo: um `ack` perdido faz a interface
  * dizer "comando expirou" para uma ação que na verdade funcionou.
  */
 uint8_t app_state_peek_acks(CommandAck* out, uint8_t max);
@@ -204,7 +204,7 @@ uint32_t app_state_ack_generation();
 
 /**
  * Sinaliza que um `device.reboot` foi confirmado e está esperando a
- * confirmação **sair** antes de reiniciar (UPGRADE/03, F2).
+ * confirmação **sair** antes de reiniciar.
  *
  * Reiniciar por temporizador fixo (como antes) tipicamente reinicia antes de
  * o `ack` alcançar o próximo POST — o intervalo padrão de telemetria já é

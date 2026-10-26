@@ -77,7 +77,7 @@ static void _drain_commands() {
         //
         // Quem decide QUANDO reiniciar é a task de rede, não um temporizador
         // fixo aqui: só ela sabe quando o `ack` realmente saiu num POST bem-
-        // sucedido (UPGRADE/03, F2). Ver `app_state_request_reboot`.
+        // sucedido. Ver `app_state_request_reboot`.
         app_state_push_ack(cmd.id, true, nullptr);
         event_log(SEV_WARN, COMP_SYSTEM, "system.reboot_requested",
                   "Reinicio solicitado pelo servidor");
@@ -164,8 +164,8 @@ static void _publish_snapshot() {
 
   s.uptime_ms = millis();
 
-  // Diagnóstico do controlador que nasce no núcleo de controle (UPGRADE/03,
-  // F7) — o resto (heap, motivo do reset, latência do POST) é medido
+  // Diagnóstico do controlador que nasce no núcleo de controle —
+  // o resto (heap, motivo do reset, latência do POST) é medido
   // diretamente pela task de rede, que já roda no núcleo certo para isso.
   s.button_pressed  = light_button_pressed();
   s.pot_raw_adc     = (uint16_t)fan_get_pot_raw_adc();

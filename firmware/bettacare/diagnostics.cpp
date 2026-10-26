@@ -94,7 +94,7 @@ static void _probe_temp(DiagnosticReport& r) {
 
 /** Procura o DS3231 no endereço fixo e confere se a hora faz sentido. */
 static void _probe_rtc(DiagnosticReport& r) {
-  // Pelo mutex do I²C (UPGRADE/07): antes isto falava com o barramento direto,
+  // Pelo mutex do I²C: antes isto falava com o barramento direto,
   // e podia cruzar com o NTP ajustando o DS3231 pelo outro núcleo.
   bool respondeu = rtc_probe_present();
 
@@ -220,7 +220,7 @@ static void _probe_pot(DiagnosticReport& r) {
 
   // Os extremos são posições do botão, não defeito: o mínimo é onde o
   // potenciômetro desliga a ventoinha, e o topo satura o ADC antes dos 3,3 V em
-  // qualquer montagem boa (UPGRADE/02, §8). O servidor já os trata assim
+  // qualquer montagem boa. O servidor já os trata assim
   // (`evaluatePot`). Marcá-los "degraded" aqui fazia todo autodiagnóstico com o
   // botão no mínimo acusar problema — e um alarme que dispara sempre se aprende
   // a ignorar. O aviso sobre o fio do cursor fica no texto, sem acusar ninguém.

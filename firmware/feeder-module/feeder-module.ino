@@ -16,7 +16,7 @@
 
 // Firmware do módulo alimentador (ESP32-C3 Super Mini). O mapa dos arquivos
 // e a bancada estão no README.md desta pasta; montagem e pinos em
-// docs/pinagem-alimentador-modulo.md.
+// docs/hardware/modulo-alimentador.md.
 //
 // O loop nunca espera: o doseador é uma máquina de estados, o botão é
 // amostrado por timer e o enlace lê o que já chegou no UART. Quem bloqueia

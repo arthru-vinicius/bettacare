@@ -14,7 +14,7 @@ static const unsigned long STUCK_MS = 30000;
 static bool _btn_stuck_reported = false;
 
 /**
- * Debounce por amostragem de nível, não por borda (UPGRADE/07).
+ * Debounce por amostragem de nível, não por borda.
  *
  * A versão por interrupção aceitava como toque **qualquer** borda de descida
  * no GPIO18, e o "debounce" de 50 ms era inócuo porque o loop roda a cada

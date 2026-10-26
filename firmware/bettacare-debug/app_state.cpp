@@ -17,7 +17,7 @@ static SemaphoreHandle_t _snapshot_mutex = nullptr;
 static QueueHandle_t     _commands = nullptr;
 
 /**
- * Buffer de acks, não fila FreeRTOS (UPGRADE/03, F1).
+ * Buffer de acks, não fila FreeRTOS.
  *
  * Uma `xQueue` só permite tirar um item de vez, destrutivamente — não dá para
  * "olhar sem remover". E é exatamente isso que a correção do F1 exige: montar

@@ -101,7 +101,7 @@ uint16_t api_client_consecutive_failures() { return _failures; }
 uint32_t api_client_last_success_ms() { return _last_success_ms; }
 int api_client_last_http_status() { return _last_http_status; }
 
-// ── Diagnóstico do controlador (UPGRADE/03, F7) ─────────────────────────────
+// ── Diagnóstico do controlador ─────────────────────────────
 
 /** Nomes curtos e estáveis — o que `diagSchema.reset_reason` espera. */
 static const char* _reset_reason_name() {
@@ -178,7 +178,7 @@ static void _build_body(JsonDocument& doc, const DeviceSnapshot& s,
   JsonObject wifi = doc["wifi"].to<JsonObject>();
   // `-120` é valor de repouso, não medição — sem a checagem de validade, um
   // snapshot capturado durante uma queda breve viajava como se fosse RSSI
-  // real (UPGRADE/03, F13, e a mesma família do bug de sentinela numérica
+  // real (a mesma família do bug de sentinela numérica
   // corrigido em `a4596fe`).
   if (s.wifi_rssi_valid) {
     wifi["rssi"] = s.wifi_rssi;
@@ -284,7 +284,7 @@ static void _build_body(JsonDocument& doc, const DeviceSnapshot& s,
   }
 
   /**
-   * Diagnóstico do controlador (UPGRADE/03, F7) — responde ao que era
+   * Diagnóstico do controlador — responde ao que era
    * impossível responder antes: o ESP32 reiniciou esta noite, e por quê; a
    * memória está caindo ao longo dos dias; o potenciômetro tem mau contato.
    *
@@ -457,7 +457,7 @@ ApiResult api_client_post() {
   uint8_t n_eventos = event_log_peek(eventos, EVENT_BUFFER_SIZE);
 
   // `peek`, não drena: se o POST falhar, os acks continuam na fila para o
-  // próximo ciclo tentar de novo (UPGRADE/03, F1). Só são removidos de fato
+  // próximo ciclo tentar de novo. Só são removidos de fato
   // depois da confirmação do servidor, mais abaixo.
   CommandAck acks[8];
   uint8_t n_acks = app_state_peek_acks(acks, 8);
@@ -534,7 +534,7 @@ ApiResult api_client_post() {
   } else if (status == 400) {
     /**
      * O servidor recusou o corpo mesmo depois de tentar corrigi-lo sozinho
-     * (UPGRADE/05, C1). Repetir o mesmo corpo daria o mesmo resultado — ao
+     *. Repetir o mesmo corpo daria o mesmo resultado — ao
      * contrário das outras falhas, o `seq` avança mesmo sem sucesso pleno,
      * para o próximo ciclo enviar um corpo novo (com leituras frescas) em vez
      * de insistir indefinidamente no que acabou de ser rejeitado. Os `ack`
@@ -549,7 +549,7 @@ ApiResult api_client_post() {
               "Servidor recusou o corpo (HTTP 400); seguindo com o proximo ciclo");
     _seq++;
     _failures = 0;
-    // `_last_success_ms` NÃO avança (UPGRADE/07): o servidor estava de pé, mas
+    // `_last_success_ms` NÃO avança: o servidor estava de pé, mas
     // não aceitou nada. Marcar como sucesso fazia o `/status` local dizer
     // "tudo certo, contato há 1 s" enquanto o painel dizia "sem contato há 20
     // minutos" — e o motivo real ficava invisível dos dois lados.

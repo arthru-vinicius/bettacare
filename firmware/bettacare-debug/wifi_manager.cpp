@@ -70,7 +70,7 @@ static Preferences _prefs;
 
 /**
  * Protege `_configured_ssid`, `_configured_password`, `_recovery_ap_ssid` e o
- * BSSID pedido pelo portal (UPGRADE/03, F6). São escritos de três contextos —
+ * BSSID pedido pelo portal. São escritos de três contextos —
  * a task de rede (núcleo 0), o `setup()` no boot, e a task do AsyncTCP quando
  * alguém usa o portal de recuperação —, e sem proteção, um deles podia seguir
  * um ponteiro que o outro acabou de liberar.

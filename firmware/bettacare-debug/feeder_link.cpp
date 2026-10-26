@@ -213,7 +213,7 @@ static void _handle_line(char* line) {
   // Qualquer linha **reconhecível** prova que o módulo está vivo — não só o
   // PONG. Linha desconhecida não prova nada: antes, ruído no RX com o
   // conector vazio marcava o módulo como conectado e, 6 s depois, gerava um
-  // "desconectou" que nunca aconteceu (UPGRADE/07).
+  // "desconectou" que nunca aconteceu.
   bool reconhecida = strcmp(tok, "PONG") == 0 || strcmp(tok, "SCHEDULE") == 0 ||
                      strcmp(tok, "FED") == 0 || strcmp(tok, "DENIED") == 0;
   if (!reconhecida) return;
@@ -248,7 +248,7 @@ static void _handle_line(char* line) {
 
   if (strcmp(tok, "SCHEDULE") == 0) {
     // O módulo empurra isto sozinho a cada reconexão — a NVS dele é a fonte
-    // de verdade da agenda, não o servidor (ver pinagem-alimentador-modulo.md).
+    // de verdade da agenda, não o servidor (ver docs/hardware/modulo-alimentador.md).
     FeederSchedule agenda;
     if (!_parse_schedule(p, agenda)) return;
     _apply_schedule(agenda);

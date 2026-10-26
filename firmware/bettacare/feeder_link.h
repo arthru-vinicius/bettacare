@@ -8,10 +8,10 @@
  * O módulo (ESP32-C3) roda sozinho, com RTC, botão e OLED próprios — este
  * arquivo não sabe nada sobre grãos, servo ou motor de vibração. A única
  * responsabilidade daqui é a ponte UART2 (GPIO4/GPIO16, ver
- * `pinagem-e-montagem-esp32.md` §8): mandar `FEED`/`CFG`, ouvir
+ * `docs/hardware/controlador-principal.md` §8): mandar `FEED`/`CFG`, ouvir
  * `PONG`/`FED`/`SCHEDULE`, e decidir se o módulo está "conectado" — que é só
  * "respondeu recentemente", nunca uma condição de erro por si só. O módulo
- * não fica ligado o tempo todo por desenho (ver `pinagem-alimentador-modulo.md`),
+ * não fica ligado o tempo todo por desenho (ver `docs/hardware/modulo-alimentador.md`),
  * então desconectado é o estado comum, não uma falha.
  *
  * Roda inteiro no núcleo de controle (chamado do `loop()`, como light/fan) —
@@ -24,7 +24,7 @@
  * — o repouso de qualquer UART. Sem módulo no fio, o principal não manda nem
  * `PING`, e o POST não leva bloco `feeder`. Do lado do módulo, isso exige o TX
  * dele ligado ao fio por no máximo ~2,2 kΩ em série (ver
- * `pinagem-alimentador-modulo.md`): mais que isso, o pull-down interno de
+ * `docs/hardware/modulo-alimentador.md`): mais que isso, o pull-down interno de
  * ~45 kΩ puxa o nível alto para perto do limiar.
  *
  * Protocolo, uma linha ASCII por mensagem, terminada em `\n`:

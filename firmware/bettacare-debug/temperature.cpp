@@ -131,7 +131,7 @@ static void _count_failure(unsigned long agora) {
             (unsigned)_consecutive_failures);
 
   /**
-   * A transição vira evento **aqui**, não em `_probe()` (UPGRADE/03, F4).
+   * A transição vira evento **aqui**, não em `_probe()`.
    * `_probe()` só fala quando `encontrado != _available` — e como a linha
    * seguinte já marca `_available = false`, a próxima sondagem que
    * confirme "não está lá" bate `false == _available (false)` e volta

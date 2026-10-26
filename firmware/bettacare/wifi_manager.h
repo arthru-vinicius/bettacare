@@ -72,7 +72,7 @@ int16_t wifi_rssi();
  *        de repouso, não uma leitura. Sem isto, um snapshot capturado durante
  *        uma queda breve de Wi-Fi podia viajar como se fosse RSSI real, e o
  *        servidor classificaria o link como "fraco" quando na verdade não
- *        havia leitura nenhuma (UPGRADE/03, F13).
+ *        havia leitura nenhuma.
  */
 bool wifi_rssi_valid();
 

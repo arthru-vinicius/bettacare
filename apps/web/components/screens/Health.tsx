@@ -23,7 +23,7 @@ import { usePushNotifications, type PushState } from "@/lib/usePushNotifications
  */
 /**
  * `button` e `pot` entraram na rodada de confiabilidade de 2026-08-21
- * (UPGRADE/04, S2) — só aparecem de fato quando o firmware manda o bloco
+ * — só aparecem de fato quando o firmware manda o bloco
  * `diag`; um dispositivo antigo simplesmente não os lista, sem exigir mudança
  * aqui, porque a tela renderiza o que `data.components` de fato trouxer.
  */
@@ -313,7 +313,7 @@ const RESET_REASON_LABELS: Record<string, string> = {
   unknown: "Desconhecido",
 };
 
-/** Motivos que valem a pena investigar do lado elétrico — ver UPGRADE/02. */
+/** Motivos que valem a pena investigar do lado elétrico. */
 const RESET_REASONS_DE_ATENCAO = new Set([
   "brownout",
   "panic",
@@ -325,7 +325,7 @@ const RESET_REASONS_DE_ATENCAO = new Set([
 
 /**
  * Diagnóstico do **controlador**, não do aquário — acrescentado na rodada de
- * confiabilidade de 2026-08-21 (UPGRADE/06). Responde "o ESP32 reiniciou esta
+ * confiabilidade de 2026-08-21. Responde "o ESP32 reiniciou esta
  * noite, e por quê?" e "a memória está caindo?", perguntas que a lista de
  * componentes acima não tem como responder: aquilo é sobre o hardware do
  * aquário, isto é sobre o chip que o controla.
@@ -466,8 +466,8 @@ function valorDe(h: ComponentHealth): string {
       return typeof pressionado === "boolean" ? (pressionado ? "pressionado" : "solto") : "—";
     }
     case "pot": {
-      // Os extremos são posições, não defeito: o topo satura o ADC (UPGRADE/02,
-      // §8) e o mínimo é o "desligar" do firmware (`POT_MIN_ADC`, 110).
+      // Os extremos são posições, não defeito: o topo satura o ADC e o
+      // mínimo é o "desligar" do firmware (`POT_MIN_ADC`, 110).
       const adc = d["adc"];
       if (typeof adc !== "number") return "—";
       if (adc >= 4090) return `${adc} / 4095 · fim do curso`;

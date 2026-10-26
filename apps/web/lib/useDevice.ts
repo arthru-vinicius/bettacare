@@ -23,7 +23,7 @@ import { ApiError, fetchCommands, fetchOverview, saveConfig, sendCommand } from 
 const POLL_MS = 2000;
 /** Enquanto há comando ou configuração em voo, acompanha de perto. */
 const POLL_FAST_MS = 600;
-/** Teto do recuo progressivo quando o servidor não responde (UPGRADE/06, P6). */
+/** Teto do recuo progressivo quando o servidor não responde. */
 const POLL_BACKOFF_MAX_MS = 60_000;
 /** Quanto esperar o aquário confirmar uma configuração nova antes de desistir de acompanhar. */
 const SETTINGS_APPLY_TIMEOUT_MS = 30_000;
@@ -98,7 +98,7 @@ export function useDevice() {
 
   /** Ids que este cliente enviou e ainda aguardam desfecho. */
   const watching = useRef<Set<number>>(new Set());
-  /** Falhas seguidas do polling — alimenta o recuo progressivo (UPGRADE/06, P6). */
+  /** Falhas seguidas do polling — alimenta o recuo progressivo. */
   const pollFailures = useRef(0);
   /** Último `device.online` visto — decide o ritmo do polling com comando em espera. */
   const deviceOffline = useRef(false);
@@ -195,7 +195,7 @@ export function useDevice() {
     }
 
     /**
-     * Pendente com o aquário sem contato (UPGRADE/06, P4; e a fila de 15 min
+     * Pendente com o aquário sem contato (e a fila de 15 min
      * da v1.3.0). Antes isto virava "fail" e o app parava de acompanhar — mas
      * o comando continua no servidor, e na volta ele é executado. Agora a tela
      * diz até quando ele espera e segue observando: o desfecho real
@@ -252,7 +252,7 @@ export function useDevice() {
      * Antes só era chamada na montagem e ao trocar de aba — então
      * `POLL_FAST_MS` nunca era alcançado no fluxo normal de enviar um
      * comando, porque alterar `watching.current` (um `useRef`) não dispara
-     * o efeito de novo (UPGRADE/06, P1). Expor esta função por `ref` deixa
+     * o efeito de novo. Expor esta função por `ref` deixa
      * `send()` chamá-la explicitamente assim que enfileira algo.
      */
     const start = () => {
@@ -265,7 +265,7 @@ export function useDevice() {
         (watching.current.size > 0 && !deviceOffline.current) || settingsWaiting.current !== null;
       const base = emVoo ? POLL_FAST_MS : POLL_MS;
       // Recuo progressivo: um app esquecido aberto com o servidor fora do ar
-      // não deve bater a cada poucos segundos indefinidamente (UPGRADE/06, P6).
+      // não deve bater a cada poucos segundos indefinidamente.
       const falhas = pollFailures.current;
       const ms =
         falhas > 0 ? Math.min(base * Math.min(falhas, 8), POLL_BACKOFF_MAX_MS) : base;
@@ -501,7 +501,7 @@ function describeFailure(cmd: CommandItem): { reason: string; hint?: string } {
 
 /**
  * Traduz uma falha de carregamento para uma frase que aponta para a peça
- * certa (UPGRADE/06, P3). Antes, qualquer erro — rede fora do ar, servidor de
+ * certa. Antes, qualquer erro — rede fora do ar, servidor de
  * pé mas sem banco — virava a mesma frase genérica de rede, e "Servidor sem
  * banco de dados" (uma das quatro frases previstas no desenho de
  * observabilidade) nunca aparecia: o servidor respondia, só que com `503` e

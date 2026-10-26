@@ -29,7 +29,7 @@ const FACTORY_DEFAULT: FormState = { hour1: 5, hour2: 17, grains: 5, auto: true 
 
 /**
  * Tela do alimentador de precisão — módulo opcional, ligado ao ESP32 por um
- * ESP32-C3 próprio (ver `docs/pinagem-alimentador-modulo.md`). Ele não fica
+ * ESP32-C3 próprio (ver `docs/hardware/modulo-alimentador.md`). Ele não fica
  * ligado o tempo todo por desenho, então "não conectado" é o estado comum
  * desta tela, não um erro — é por isso que ela nunca usa `.pill.danger` nem
  * um tom de alarme para isso.

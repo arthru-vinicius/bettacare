@@ -71,7 +71,7 @@ export interface EventQuery {
   sev?: string[] | undefined;
   comp?: string[] | undefined;
   source?: "device" | "server" | undefined;
-  /** Busca em `msg` e `code` — o servidor já aceita (`docs/api-servidor.md`); só faltava o front pedir (UPGRADE/06, P2). */
+  /** Busca em `msg` e `code` — o servidor já aceita (`docs/api.md`); só faltava o front pedir. */
   q?: string | undefined;
   /** Início do período, inclusivo. */
   from?: Date | undefined;

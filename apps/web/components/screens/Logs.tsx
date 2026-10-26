@@ -73,7 +73,7 @@ export function Logs() {
   const [comp, setComp] = useState("");
   const [origem, setOrigem] = useState("");
   const [busca, setBusca] = useState("");
-  /** Debounced: sem isto, cada tecla digitada dispararia uma requisição nova (UPGRADE/06, P2). */
+  /** Debounced: sem isto, cada tecla digitada dispararia uma requisição nova. */
   const [buscaEfetiva, setBuscaEfetiva] = useState("");
   const [maisFiltros, setMaisFiltros] = useState(false);
 

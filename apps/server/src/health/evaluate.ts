@@ -30,7 +30,7 @@ const WIFI_WEAK_PERSIST_MS = 60_000;
 /**
  * Por quanto tempo uma anomalia precisa persistir para virar `fault`.
  *
- * Medido em **tempo**, não em POSTs seguidos (UPGRADE/07). A versão anterior
+ * Medido em **tempo**, não em POSTs seguidos. A versão anterior
  * contava dois "strikes", que com POST a cada 3 s davam ~6 s; com o intervalo
  * ajustável para 1 s, dois strikes virariam 2 s — menos que a janela de 2 s em
  * que o firmware conta os pulsos do tacômetro, então toda ventoinha recém-
@@ -193,7 +193,7 @@ function evaluateLight(t: TelemetryRequest, ctx: HealthContext): HealthVerdict {
    * dizer que a última mudança veio do comando e, ainda assim, o estado não
    * ser o comandado — firmware fora do eixo.
    *
-   * Só vale com `source === "command"` (UPGRADE/07). Antes valia sempre, e o
+   * Só vale com `source === "command"`. Antes valia sempre, e o
    * "desejado" de um comando antigo ficava de pé para sempre: apertar o botão
    * físico, ou a automação virar o período, contava como falha da luminária —
    * 300 `light.state_mismatch` e pushes "a luminária não respondeu" num só dia
@@ -231,7 +231,7 @@ function evaluateWifi(t: TelemetryRequest, ctx: HealthContext): HealthVerdict {
     channel: t.wifi.channel ?? null,
   };
 
-  // `null` é "sem leitura no instante do snapshot" (UPGRADE/03, F13), não
+  // `null` é "sem leitura no instante do snapshot", não
   // "sinal ruim" — tratar como degraded aqui inflaria falsos alarmes a partir
   // de uma janela de poucos milissegundos sem associação.
   if (t.wifi.rssi === null) {
@@ -256,7 +256,7 @@ function evaluateWifi(t: TelemetryRequest, ctx: HealthContext): HealthVerdict {
 
 /**
  * Substitui a tautologia anterior ("chegou POST, então tudo bem") por uma
- * regra real (UPGRADE/04, S3). `api_failures` já existe no firmware desde a
+ * regra real. `api_failures` já existe no firmware desde a
  * reescrita — só faltava sair no corpo.
  */
 function evaluateApi(t: TelemetryRequest): HealthVerdict {
@@ -277,7 +277,7 @@ function evaluateApi(t: TelemetryRequest): HealthVerdict {
 }
 
 /**
- * `button` entrou na aba Saúde nesta rodada (UPGRADE/04, S2) — era invisível
+ * `button` entrou na aba Saúde nesta rodada — era invisível
  * mesmo sendo uma entrada física que também falha. O firmware já detecta e
  * emite `button.stuck` sozinho; isto é a corroboração do lado do servidor.
  */
@@ -295,14 +295,14 @@ function evaluateButton(t: TelemetryRequest, ctx: HealthContext): HealthVerdict 
 }
 
 /**
- * `pot` era o exemplo citado em `docs/arquitetura-observabilidade.md` como
- * "hoje invisível" (UPGRADE/04, S2): agora a aba Saúde mostra a leitura crua
+ * `pot` era o exemplo citado em `docs/arquitetura.md` como
+ * "hoje invisível": agora a aba Saúde mostra a leitura crua
  * do ADC e o último sinal.
  *
  * Nenhum valor isolado é defeito. Até a v1.1.0 havia uma regra — "4090 ou
  * mais é mau contato" — que disparava com o potenciômetro só girado até o
  * fim: o ADC do ESP32 satura antes dos 3,3 V, e o topo do curso lê 4095 em
- * qualquer montagem boa (UPGRADE/02, §8). Em produção, foi `degraded` com o
+ * qualquer montagem boa. Em produção, foi `degraded` com o
  * potenciômetro funcionando — na véspera ele tinha ajustado a ventoinha 184
  * vezes. O mínimo também é posição legítima: é como se desliga a ventoinha.
  * Separar fio solto de fim de curso exige mudar a montagem (resistor em
@@ -392,7 +392,7 @@ function evaluateSystem(t: TelemetryRequest, ctx: HealthContext): HealthVerdict 
 
   // Reinício não comandado é o sinal mais forte que existe: aponta para
   // alimentação (brownout) ou para software travado (watchdog). Ver
-  // docs/pinagem-e-montagem-esp32.md §1.
+  // docs/hardware/controlador-principal.md §1.
   if (reset_reason != null && UNCLEAN_RESETS.has(reset_reason)) {
     return { comp: "system", status: "fault", code: "system.unclean_reset", detail };
   }

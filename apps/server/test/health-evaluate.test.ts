@@ -6,7 +6,7 @@ import { evaluateHealth, type HealthContext } from "../src/health/evaluate.js";
 
 /**
  * Testes puros — sem banco — das regras acrescentadas na rodada de
- * confiabilidade de 2026-08-21 (UPGRADE/04, S2 e S3). `evaluateHealth` não
+ * confiabilidade de 2026-08-21. `evaluateHealth` não
  * toca infraestrutura nenhuma, então roda em qualquer máquina sem Docker.
  */
 
@@ -96,7 +96,7 @@ describe("saúde: Wi-Fi com histerese (sinal oscilando, produção 2026-10)", ()
   });
 });
 
-describe("saúde: button e pot (UPGRADE/04, S2)", () => {
+describe("saúde: button e pot", () => {
   it("sem diag, button e pot não aparecem — nunca 'unknown' fingido", () => {
     const verdicts = evaluateHealth(corpo(), CTX_VAZIO);
     assert.equal(verdicts.find((v) => v.comp === "button"), undefined);
@@ -116,7 +116,7 @@ describe("saúde: button e pot (UPGRADE/04, S2)", () => {
 
   it("potenciômetro no fim do curso é posição, não defeito — o ADC satura em 4095", () => {
     // Falso alarme da v1.1.0 em produção: `degraded` com o potenciômetro
-    // funcionando, só girado até o fim (UPGRADE/02, §8).
+    // funcionando, só girado até o fim.
     for (const adc of [0, 4095]) {
       const verdicts = evaluateHealth(
         corpo({ diag: { pot_raw_adc: adc, button_pressed: false, api_failures: 0 } }),
@@ -150,7 +150,7 @@ describe("saúde: button e pot (UPGRADE/04, S2)", () => {
   });
 });
 
-describe("saúde: anomalias medidas por tempo (UPGRADE/07)", () => {
+describe("saúde: anomalias medidas por tempo", () => {
   const girando = corpo({ fan: { on: true, speed_percent: 60, rpm: 1400, mode: "manual" } });
   const parada = corpo({ fan: { on: true, speed_percent: 60, rpm: 0, mode: "manual" } });
 
@@ -184,7 +184,7 @@ describe("saúde: anomalias medidas por tempo (UPGRADE/07)", () => {
   });
 });
 
-describe("saúde: api real (UPGRADE/04, S3)", () => {
+describe("saúde: api real", () => {
   it("sem falhas anteriores, ok", () => {
     const verdicts = evaluateHealth(corpo({ diag: { api_failures: 0, button_pressed: false } }), CTX_VAZIO);
     assert.equal(verdicts.find((v) => v.comp === "api")?.status, "ok");

@@ -37,7 +37,7 @@ const FEEDER_ZERADO = {
   last_feed_ok: false,
 };
 
-/** Ruído no tacômetro: o exemplo de campo fora de faixa do UPGRADE/05 (C1). */
+/** Ruído no tacômetro: o exemplo de campo fora de faixa. */
 const RPM_IMPOSSIVEL = { on: true, speed_percent: 50, rpm: 99_999, mode: "auto" };
 
 function corpo(deviceId: string, seq: number, over: Record<string, unknown> = {}) {

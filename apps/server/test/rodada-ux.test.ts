@@ -13,7 +13,7 @@ import { createLogger } from "../src/logger.js";
 import { createRuntime } from "../src/runtime.js";
 
 /**
- * Integração da rodada de 2026-10-02 (UPGRADE/07): configuração editável pela
+ * Integração da rodada de 2026-10-02: configuração editável pela
  * interface, falso alarme da luminária, escrita de saúde sob POST a cada 1 s e
  * exportação para planilha.
  *
@@ -47,7 +47,7 @@ async function lerFluxo(s: ReadableStream<Uint8Array>): Promise<string> {
   return new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes);
 }
 
-describe("rodada de UX e estabilidade (UPGRADE/07)", { skip: url ? false : "DATABASE_URL não definida" }, () => {
+describe("rodada de UX e estabilidade", { skip: url ? false : "DATABASE_URL não definida" }, () => {
   let rt: ReturnType<typeof createRuntime>;
   const t0 = new Date("2026-10-02T15:00:00Z");
   const em = (s: number) => new Date(t0.getTime() + s * 1000);

@@ -18,7 +18,7 @@ import { processTelemetry } from "./process.js";
  * modelo de ameaça aqui não é o invasor — é o **firmware com defeito**: um
  * `_build_body` em laço, um buffer de eventos corrompido, e o servidor
  * compartilhado do homelab recebe um corpo de tamanho arbitrário. 16 KB dá
- * vinte vezes de folga sobre o pior caso legítimo. Ver UPGRADE/04 (S11).
+ * vinte vezes de folga sobre o pior caso legítimo.
  */
 const MAX_BODY_BYTES = 16 * 1024;
 
@@ -78,7 +78,7 @@ export function createIngestRouter(rt: Runtime): Hono {
     }
 
     /**
-     * Tolerância a dado ruim (UPGRADE/05, achado C1): um único valor fora de
+     * Tolerância a dado ruim: um único valor fora de
      * faixa — o exemplo real é `fan.rpm` inflado por ruído no tacômetro sem
      * pull-up — não pode derrubar o corpo inteiro. Rejeitar tudo faz o
      * firmware reenviar o mesmo corpo indefinidamente e o watchdog concluir
@@ -87,7 +87,7 @@ export function createIngestRouter(rt: Runtime): Hono {
     const sanitized = sanitizeTelemetryRequest(raw);
     if (sanitized.data === null) {
       // O valor recebido vai junto de cada problema: sem ele, "comp fora do
-      // enum" não dizia qual componente o firmware mandou (UPGRADE/07).
+      // enum" não dizia qual componente o firmware mandou.
       rt.log.warn(
         { problems: sanitized.problems, bodyPreview: previewOf(raw) },
         "telemetria rejeitada pelo contrato",

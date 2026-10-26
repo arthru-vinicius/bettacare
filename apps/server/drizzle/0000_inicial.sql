@@ -3,8 +3,8 @@
 --
 -- O drizzle-kit não exprime particionamento, e ele é indispensável: DELETE no
 -- PostgreSQL não devolve espaço ao sistema de arquivos, então o teto de 1 GB
--- só é implementável derrubando partições inteiras. Ver a seção 5 de
--- docs/arquitetura-observabilidade.md.
+-- só é implementável derrubando partições inteiras. Ver a seção 7 de
+-- docs/arquitetura.md.
 --
 -- A edição não gera drift: o drizzle-kit compara schema.ts com o snapshot em
 -- meta/, nunca com o banco. Ao regenerar, reaplicar as duas cláusulas.

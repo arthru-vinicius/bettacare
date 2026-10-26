@@ -12,7 +12,7 @@ import { createLogger } from "../src/logger.js";
 import { createRuntime } from "../src/runtime.js";
 
 /**
- * Integração da rodada de confiabilidade de 2026-08-21 (UPGRADE/).
+ * Integração da rodada de confiabilidade de 2026-08-21.
  *
  * Precisa de Postgres de verdade — ver `rollup.test.ts` para como rodar.
  */
@@ -36,7 +36,7 @@ function corpo(over: Record<string, unknown> = {}) {
 }
 
 describe(
-  "tolerância a dado ruim e ciclo de vida do comando (UPGRADE/05 C1, UPGRADE/04 S4)",
+  "tolerância a dado ruim e ciclo de vida do comando",
   { skip: url ? false : "DATABASE_URL não definida" },
   () => {
     let rt: ReturnType<typeof createRuntime>;

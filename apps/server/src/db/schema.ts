@@ -33,7 +33,7 @@ import {
  * 2. **`telemetry` e `events` são particionadas por mês.** O Drizzle não
  *    exprime `PARTITION BY`, então as definições aqui descrevem a *forma* das
  *    tabelas e a cláusula de particionamento é aplicada por SQL na migration.
- *    Ver `docs/arquitetura-observabilidade.md`, seção 5.
+ *    Ver `docs/arquitetura.md`, seção 7.
  */
 
 // ── Enums ─────────────────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ export const deviceState = pgTable("device_state", {
 
   /**
    * Diagnóstico do **controlador** — acrescentado na rodada de confiabilidade
-   * de 2026-08-21 (UPGRADE/04, S1). Nenhuma destas perguntas tinha resposta
+   * de 2026-08-21. Nenhuma destas perguntas tinha resposta
    * antes: o ESP32 reiniciou esta noite e por quê; a memória está caindo ao
    * longo dos dias; o potenciômetro tem mau contato.
    *
@@ -203,7 +203,7 @@ export const deviceState = pgTable("device_state", {
   /**
    * Saúde de `nvs`, `ota` e do buffer de eventos — os três pontos cegos que
    * sobraram da primeira rodada (`nvs` e `system` emitiam evento sem ter
-   * status; `ota` não emitia nada). Ver UPGRADE/03 e a auditoria de cobertura.
+   * status; `ota` não emitia nada).
    */
   nvsFailures: integer("nvs_failures").notNull().default(0),
   otaLastResult: text("ota_last_result").notNull().default("none"),
@@ -225,7 +225,7 @@ export const deviceState = pgTable("device_state", {
 
   /**
    * Módulo opcional de alimentação de precisão — ver
-   * `docs/pinagem-alimentador-modulo.md`. A NVS do próprio módulo é a fonte
+   * `docs/hardware/modulo-alimentador.md`. A NVS do próprio módulo é a fonte
    * de verdade da agenda; estas colunas são o último estado que ele
    * reportou, preservado enquanto `feederConnected` for falso (ele não fica
    * ligado o tempo todo por desenho — desconectar não apaga a agenda que o
@@ -305,7 +305,7 @@ export const telemetry = pgTable(
     wifiRssi: smallint("wifi_rssi"),
 
     /**
-     * Histórico do controlador (UPGRADE/04, S9). Antes desta rodada, saúde de
+     * Histórico do controlador. Antes desta rodada, saúde de
      * `rtc` e `wifi` só existia como estado corrente — perguntas de tendência
      * ("desde quando o RTC está sem bateria?") não tinham resposta se o evento
      * de transição tivesse sido descartado por estouro de buffer no firmware.

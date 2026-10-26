@@ -13,7 +13,7 @@ const INTERVAL_MS = 30_000;
  * merece `cmd.device_offline` — bem mais curto que `DEVICE_OFFLINE_AFTER_S`
  * (padrão 60 s), porque o usuário que acabou de tocar um botão no app quer
  * saber em segundos, não em um minuto, por que nada aconteceu ainda.
- * Ver UPGRADE/04 (S4) e a seção 4 de `docs/arquitetura-observabilidade.md`.
+ * Ver a seção 3 de `docs/arquitetura.md`.
  */
 const QUEUED_OFFLINE_AFTER_S = 15;
 

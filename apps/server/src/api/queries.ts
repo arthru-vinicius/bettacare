@@ -366,7 +366,7 @@ export async function getReport(
 /**
  * Grava a configuração e incrementa a versão que o dispositivo compara.
  *
- * Registra a mudança como evento (UPGRADE/07): antes, mudar o horário da luz
+ * Registra a mudança como evento: antes, mudar o horário da luz
  * não deixava rastro nenhum, e "por que a luz acendeu às 9h?" não tinha
  * resposta na aba de registros. Uma gravação que não muda nada não sobe a
  * versão — senão o dispositivo reaplicaria a mesma configuração à toa.

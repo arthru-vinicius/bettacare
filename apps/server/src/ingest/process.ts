@@ -88,7 +88,7 @@ export async function processTelemetry(
   cfg: AppConfig,
   received: TelemetryRequest,
   now: Date,
-  /** Campos que o saneamento (UPGRADE/05, C1) precisou corrigir antes de aceitar o corpo. */
+  /** Campos que o saneamento precisou corrigir antes de aceitar o corpo. */
   corrections: readonly TelemetryCorrection[] = [],
 ): Promise<ProcessResult> {
   const alerts: PushMessage[] = [];
@@ -159,7 +159,7 @@ export async function processTelemetry(
     }
 
     // Um campo saiu de faixa e foi corrigido no lugar de derrubar o corpo
-    // inteiro (UPGRADE/05, C1). O diagnóstico honesto: algo está errado nesse
+    // inteiro. O diagnóstico honesto: algo está errado nesse
     // campo específico, não que o dispositivo sumiu.
     const newCorrections: TelemetryCorrection[] = [];
     for (const c of corrections) {
@@ -231,7 +231,7 @@ export async function processTelemetry(
 
       /**
        * O "desejado" de um comando só vale enquanto a última mudança da luz
-       * foi esse comando (UPGRADE/07). Quando o botão físico ou a automação
+       * foi esse comando. Quando o botão físico ou a automação
        * mudam a luz, o pedido antigo deixa de ser referência — mantê-lo fazia
        * qualquer uso legítimo do botão parecer falha da luminária.
        */
@@ -283,7 +283,7 @@ export async function processTelemetry(
           fanRpm: body.fan.rpm,
           fanMode: body.fan.mode,
           wifiRssi: body.wifi.rssi,
-          // Histórico do controlador (UPGRADE/04, S9) — ver o comentário em
+          // Histórico do controlador — ver o comentário em
           // `db/schema.ts` sobre por que `resetReason` fica fora daqui.
           tempAgeMs: body.temperature.age_ms,
           rtcAvailable: body.rtc.available,
@@ -322,7 +322,7 @@ export async function processTelemetry(
        * Último conhecido, preservado quando o módulo não reportou nada
        * fresco neste ciclo — desconectar não pode apagar a agenda que o app
        * mostra (ele não fica ligado o tempo todo por desenho, ver
-       * `docs/pinagem-alimentador-modulo.md`). `feederConnected` é a
+       * `docs/hardware/modulo-alimentador.md`). `feederConnected` é a
        * exceção: reflete sempre o que **este** POST diz, nunca o anterior —
        * é o único campo que precisa ser "agora", não "última vez".
        */
@@ -672,8 +672,8 @@ async function applyAcks(
     if (!cmd) continue;
 
     /**
-     * A confirmação chegou depois de o watchdog marcar `expired` (UPGRADE/04,
-     * S8). Não é um reenvio comum: o comando **funcionou**, só a resposta se
+     * A confirmação chegou depois de o watchdog marcar `expired`.
+     * Não é um reenvio comum: o comando **funcionou**, só a resposta se
      * atrasou. Descartar em silêncio faria a interface continuar mentindo que
      * o comando falhou, quando na verdade `COMMAND_MAX_AGE_S` é que está
      * curto demais para as condições reais de rede.
@@ -792,7 +792,7 @@ async function recordHealth(
     // há "antes" para comparar, e "tudo bem" não precisa de log. Mas semear já
     // problemático (o dispositivo ligou com o sensor quebrado) precisa
     // aparecer: sem isto, "não há evento" e "não aconteceu nada" eram
-    // indistinguíveis (UPGRADE/04, S10).
+    // indistinguíveis.
     const primeiraVez = before === undefined;
     const recovered = v.status === "ok";
     // Voltar de "sem informação" para "normal" não é recuperação: o watchdog
@@ -897,7 +897,7 @@ const DEVICE_TZ_OFFSET_HOURS = -3;
 
 /**
  * Reconstrói `device_time` a partir de `ctx.device_time` (`"HH:MM"`) quando o
- * firmware não manda `t` (UPGRADE/05, S7).
+ * firmware não manda `t`.
  *
  * O `rtc_manager.cpp` guarda só minutos desde a meia-noite, de propósito: a
  * hora corrente é lida por instrução única, sem tocar o barramento I²C, para
@@ -1094,7 +1094,7 @@ async function upsertState(
     lastHistoryAt: extra.lastHistoryAt,
     deviceTime: body.device_time ? new Date(body.device_time) : null,
 
-    // Diagnóstico do controlador (UPGRADE/04, S1) — sempre o último valor
+    // Diagnóstico do controlador — sempre o último valor
     // conhecido. `resetReason` só muda uma vez por boot; o histórico dele mora
     // no evento `system.boot`, não numa coluna repetida a cada linha.
     resetReason: body.diag?.reset_reason ?? null,
@@ -1169,7 +1169,7 @@ async function loadConfig(
  * seguinte, que é exatamente o que o contrato exige — e continua sendo até o
  * fim do prazo de vida (`COMMAND_MAX_AGE_S`), não só por 90 s como era.
  *
- * O prazo também é o teto de idade para entrega (UPGRADE/04, S4): um
+ * O prazo também é o teto de idade para entrega: um
  * dispositivo que volta de horas offline não executa uma fila de decisões já
  * obsoletas. A regra de `superseded` protege comandos do **mesmo alvo**; esta
  * protege alvos diferentes — um `device.reboot` de ontem não dispara hoje.

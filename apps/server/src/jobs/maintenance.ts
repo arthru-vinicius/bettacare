@@ -40,7 +40,7 @@ export function startMaintenance(rt: Runtime): () => void {
     }
 
     /**
-     * Rollup a cada hora cheia, não só de madrugada (UPGRADE/07). Com ele só
+     * Rollup a cada hora cheia, não só de madrugada. Com ele só
      * na manutenção diária, o histórico da interface ficava até um dia
      * atrasado — "hoje" nunca aparecia, e a tela de relatórios parecia não
      * fazer nada. Agregar a hora que acabou de fechar custa uma consulta
@@ -75,7 +75,7 @@ export async function runMaintenance(rt: Runtime): Promise<void> {
    * aba Logs — a interface hoje só consulta o dispositivo padrão. Gravar para
    * **todos os dispositivos cadastrados** é a opção honesta: sem isto, um
    * `"aquarium-01"` fixo perderia o evento em silêncio se o slug real fosse
-   * outro (UPGRADE/04, S6).
+   * outro.
    */
   const deviceIds = (await rt.db.select({ deviceId: devices.deviceId }).from(devices)).map(
     (d) => d.deviceId,
@@ -176,7 +176,7 @@ export async function pruneFanRuns(
 
 /**
  * Agrega em `telemetry_hourly` toda hora completa ainda não coberta, por
- * dispositivo — não só "ontem" (UPGRADE/04, S5).
+ * dispositivo — não só "ontem".
  *
  * A janela fixa original perdia dias inteiros para sempre se o servidor
  * ficasse fora do ar quando a manutenção deveria ter rodado: como

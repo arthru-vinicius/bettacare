@@ -1,7 +1,7 @@
 # Firmware de debug do controlador
 
 O firmware de produção (`firmware/bettacare`) inteiro, **mais** a instrumentação
-que achou o relé que mudava de estado sozinho (UPGRADE/07) e que depois validou,
+que achou o relé que mudava de estado sozinho e que depois validou,
 injetando falhas ao vivo, as correções de estabilidade de 2026-10-01.
 
 Use para investigar. Para o uso normal, grave o de produção.

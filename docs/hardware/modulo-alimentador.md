@@ -2,17 +2,15 @@
 
 Guia de montagem física do módulo opcional de alimentação de precisão do
 BettaCare. Companheiro de
-[`pinagem-e-montagem-esp32.md`](./pinagem-e-montagem-esp32.md) — aqui é só o
+[`controlador-principal.md`](./controlador-principal.md) — aqui é só o
 módulo que fica na caixinha separada, ligado ao principal por 4 fios.
 
-> **Criado em 2026-09-03, reorganizado em 2026-10-02**, antes de qualquer
-> solda, com um critério só: durar. A placa já existe (Tenstar ESP32-C3 Super
-> Mini) e roda o firmware completo, em beta, de `firmware/feeder-module/` —
-> o [README de lá](../firmware/feeder-module/README.md) tem a gravação, o
-> console e a primeira montagem na bancada. O resto ainda não foi montado. O
-> módulo funciona sozinho — RTC, botão e display próprios — e o cabo com o
-> principal é opcional. A estrutura impressa (base, torre e topo) está em
-> [`modelagem-alimentador/`](./modelagem-alimentador/).
+> **Situação.** A placa (ESP32-C3 Super Mini) roda o firmware completo, em
+> beta, de `firmware/feeder-module/` — o
+> [README de lá](../../firmware/feeder-module/README.md) tem a gravação, o
+> console e a primeira montagem na bancada. O mecanismo ainda não foi montado.
+> O módulo funciona sozinho — RTC, botão e display próprios — e o cabo com o
+> principal é opcional.
 >
 > **O módulo não fica ligado o tempo todo.** Liga quando for prático — isso
 > exige duas garantias no firmware que não existiriam se ele ficasse sempre
@@ -23,18 +21,18 @@ módulo que fica na caixinha separada, ligado ao principal por 4 fios.
 
 ---
 
-## O que mudou na reorganização de 2026-10-02
+## Decisões de projeto
 
-| Antes | Agora | Por quê |
-|---|---|---|
-| Botão no `GPIO11` | `GPIO5` | O `GPIO11` é o `VDD_SPI`, que alimenta a flash da placa; a Super Mini nem o expõe |
-| Enlace na UART1, `GPIO4`/`GPIO5` | `GPIO20`/`GPIO21` (os pinos da UART0, usados pela UART1), com resistor em série nos dois fios | O `GPIO21` solta o log do ROM a cada reset: fica com o que tolera isso, e dois pinos quietos sobram para os atuadores. A UART0 em si fica com o console do sistema, cujo log de erro corromperia uma linha do protocolo. Os resistores protegem a ligação a quente e mantêm a detecção do módulo pelo principal (§7) |
-| LED IR sempre aceso, no `3V3` | Ligado pelo `GPIO4`, só durante a dosagem | Vida do LED, menos luz parasita e um autoteste do sensor antes de cada refeição |
-| BC337 com 1 kΩ e 1N4148 nos dois motores | Resistor de base por motor, pull-down na base, 1N5819 e PWM | O 1N4148 é pequeno para o pico do DC130P; sem pull-down o motor pode dar um tranco no boot; o 1027 é motor de 3 V |
-| Servo direto no `GPIO10` | 330 Ω em série e 10 kΩ ao GND | Sem tranco no boot; o firmware solta o PWM depois de cada movimento |
-| 12 V só pelo cabo | Cabo **ou** fonte própria de 12 V, com diodos, fusível e capacitor de entrada | "Funciona sozinho sem o cabo" precisava de uma fonte. Os diodos deixam as duas ligadas sem conflito, e um curto aqui não derruba o principal |
-| LM2596 ajustável | Versão fixa de 5 V, ou o trimpot travado | Trimpot sob vibração (M1, M2, servo) desregula com o tempo |
-| Pull-ups de entrada no RX do principal | Pull-down (firmware 2.0.1 do principal) | O principal detecta o módulo pelo nível do fio e não fala com quem não está lá |
+| Decisão | Por quê |
+|---|---|
+| Botão no `GPIO5` | O `GPIO11` é o `VDD_SPI`, que alimenta a flash da placa; a Super Mini nem o expõe |
+| Enlace nos `GPIO20`/`GPIO21` (os pinos da UART0, usados pela UART1), com resistor em série nos dois fios | O `GPIO21` solta o log do ROM a cada reset: fica com o que tolera isso, e dois pinos quietos sobram para os atuadores. A UART0 em si fica com o console do sistema, cujo log de erro corromperia uma linha do protocolo. Os resistores protegem a ligação a quente e mantêm a detecção do módulo pelo principal (§7) |
+| LED IR ligado pelo `GPIO4`, só durante a dosagem | Vida do LED, menos luz parasita e um autoteste do sensor antes de cada refeição |
+| Resistor de base por motor, pull-down na base, 1N5819 e PWM | O 1N4148 é pequeno para o pico do DC130P; sem pull-down o motor pode dar um tranco no boot; o 1027 é motor de 3 V |
+| Servo com 330 Ω em série e 10 kΩ ao GND | Sem tranco no boot; o firmware solta o PWM depois de cada movimento |
+| 12 V pelo cabo **ou** por fonte própria, com diodos, fusível e capacitor de entrada | "Funciona sozinho sem o cabo" precisa de uma fonte. Os diodos deixam as duas ligadas sem conflito, e um curto aqui não derruba o principal |
+| Buck de 5 V fixo, ou o trimpot travado | Trimpot sob vibração (M1, M2, servo) desregula com o tempo |
+| Pull-down (não pull-up) no RX do principal | O principal detecta o módulo pelo nível do fio e não fala com quem não está lá (firmware 2.0.1 do principal) |
 
 ---
 
@@ -89,30 +87,30 @@ Os mesmos números estão em `firmware/feeder-module/config.example.h`.
 
 ## Lista de componentes
 
-| Componente | Qtd. | Situação |
-|---|---|---|
-| ESP32-C3 Super Mini (USB-C) | 1 | **já possui** (Tenstar, já com o firmware 1.0.0-beta) |
-| Servo MG90S (engrenagem metálica) | 1 | comprar |
-| Motor de vibração 1027 (moeda) — M1 | 1 | comprar |
-| Motor de vibração DC130P (pêndulo) — M2 | 1 | comprar |
-| Módulo RTC DS3231 (ZS-042) | 1 | **já possui** |
-| Push button N.A. de painel | 1 | **já possui** |
-| Display OLED SSD1306 0,96" 128×64 I²C | 1 | **já possui** |
-| Par LED IR emissor + fototransistor 5 mm | 1 | comprar |
-| Módulo comparador LM393 | 1 | comprar |
-| Buck 12 → 5 V, ≥ 2 A (LM2596 de 5 V fixo, ou ajustável com o trimpot travado) | 1 | comprar |
-| Transistor NPN BC337 | 2 | comprar |
-| Diodo Schottky 1N5822 (3 A) | 2 | comprar |
-| Diodo Schottky 1N5819 (1 A) | 3 | comprar |
-| Fusível rearmável (PTC) 0,75 A, ≥ 16 V | 1 | comprar |
-| Jack P4 fêmea de painel (5,5 × 2,1 mm), para a fonte própria | 1 | comprar |
-| Resistores: 150 Ω (1), 330 Ω (1), 470 Ω (1), 1 kΩ (3), 4,7 kΩ (1), 10 kΩ (4) | 11 | comprar |
-| Eletrolítico 470 µF / 25 V (entrada de 12 V) | 1 | comprar |
-| Eletrolítico 470 µF / 16 V, baixa ESR (servo) | 1 | comprar |
-| Cerâmico 100 nF (104) | 4 | comprar |
-| Conectores JST-XH com chave: 4 vias (cabo do principal e I²C), 3 vias (servo, LM393), 2 vias (M1, M2, LED IR, botão) | 1 par de cada | comprar |
-| Bateria CR2032 (do DS3231) | 1 | conferir |
-| Placa perfurada, caixa, sílica-gel, verniz acrílico | — | comprar |
+| Componente | Qtd. |
+|---|---|
+| ESP32-C3 Super Mini (USB-C) | 1 |
+| Servo MG90S (engrenagem metálica) | 1 |
+| Motor de vibração 1027 (moeda) — M1 | 1 |
+| Motor de vibração DC130P (pêndulo) — M2 | 1 |
+| Módulo RTC DS3231 (ZS-042) | 1 |
+| Push button N.A. de painel | 1 |
+| Display OLED SSD1306 0,96" 128×64 I²C | 1 |
+| Par LED IR emissor + fototransistor 5 mm | 1 |
+| Módulo comparador LM393 | 1 |
+| Buck 12 → 5 V, ≥ 2 A (LM2596 de 5 V fixo, ou ajustável com o trimpot travado) | 1 |
+| Transistor NPN BC337 | 2 |
+| Diodo Schottky 1N5822 (3 A) | 2 |
+| Diodo Schottky 1N5819 (1 A) | 3 |
+| Fusível rearmável (PTC) 0,75 A, ≥ 16 V | 1 |
+| Jack P4 fêmea de painel (5,5 × 2,1 mm), para a fonte própria | 1 |
+| Resistores: 150 Ω (1), 330 Ω (1), 470 Ω (1), 1 kΩ (3), 4,7 kΩ (1), 10 kΩ (4) | 11 |
+| Eletrolítico 470 µF / 25 V (entrada de 12 V) | 1 |
+| Eletrolítico 470 µF / 16 V, baixa ESR (servo) | 1 |
+| Cerâmico 100 nF (104) | 4 |
+| Conectores JST-XH com chave: 4 vias (cabo do principal e I²C), 3 vias (servo, LM393), 2 vias (M1, M2, LED IR, botão) | 1 par de cada |
+| Bateria CR2032 (do DS3231) | 1 |
+| Placa perfurada, caixa, sílica-gel, verniz acrílico | — |
 
 Os resistores de 10 kΩ: pull-down das duas bases, pull-down do servo e
 pull-up do fototransistor. Os de 1 kΩ: base do M1, TX do enlace e botão.
@@ -239,7 +237,7 @@ LM393 alimentado em 3V3: a saída já sai em nível de 3,3 V
   LED queimado, desalinhado, luz entrando, comparador desajustado, fio solto —,
   a refeição **sai do mesmo jeito, contada pelo servo**: um movimento do slide
   por grão pedido, sem repetir, e o `FED` vai com o motivo `SENSOR` (o app
-  avisa). Foi a escolha do Arthur em 2026-10-02: o peixe não fica sem comer
+  avisa). É escolha de projeto: o peixe não fica sem comer
   por causa de um sensor.
 - **No topo, junto do tubo:** o LM393, o fototransistor e o pull-up de 10 kΩ.
   O sinal do fototransistor é fraco e de alta impedância — descer pela torre
@@ -274,7 +272,7 @@ GND ──┴──── GND (os dois)
 - **ZS-042 com CR2032: tire o caminho de carga** — o diodo 1N4148 ou o
   resistor de 200 Ω ao lado do suporte da bateria. O circuito foi feito para
   LIR2032 recarregável; "carregar" uma CR2032 a faz vazar ou estufar. Mesma
-  nota do módulo principal (`pinagem-e-montagem-esp32.md`, §3).
+  nota do módulo principal (`controlador-principal.md`, §3).
 - Fios de I²C curtos (até ~20 cm) e sem cruzar com os dos motores. Os pull-ups
   que vêm nos dois módulos bastam. Por isso o DS3231 e o display ficam **na
   base**, ao lado da Super Mini — o I²C não sobe pela torre. O firmware usa
@@ -296,15 +294,15 @@ GPIO5 ──┬── 1 kΩ ── (fio) ── botão ── GND
 - `INPUT_PULLUP` com o nível **amostrado por timer** (2 ms; toque = 30 ms
   seguidos em baixo, soltura = 30 ms seguidos em alto), como o botão da luz no
   módulo principal. Não interrupção por borda: lá, a interrupção aceitou como
-  toque os picos que o 1-Wire vizinho induzia no fio, e o relé trocava sozinho
-  (UPGRADE/07). Aqui o servo e os motores são fontes de ruído piores.
+  toque os picos que o 1-Wire vizinho induzia no fio, e o relé trocava sozinho.
+  Aqui o servo e os motores são fontes de ruído piores.
 - O **1 kΩ e o 100 nF** filtram o ruído que o fio do botão capta, seguram uma
   descarga eletrostática de quem toca o painel e limitam a corrente que o
   capacitor despeja nos contatos a cada toque.
 - O significado do toque é do firmware: 1× acende e passa a página, 2×
   alimenta agora (dentro do limite de 3 refeições em 24 h), 3× testa o aviso
   ao peixe, segurar 2 s programa. Tabela completa no
-  [README do firmware](../firmware/feeder-module/README.md#botão-e-tela).
+  [README do firmware](../../firmware/feeder-module/README.md#botão-e-tela).
 - O botão fica **na base**, junto do display: apertar o topo empurraria o
   braço que está sobre o aquário.
 
@@ -313,7 +311,7 @@ GPIO5 ──┬── 1 kΩ ── (fio) ── botão ── GND
 ## 7. Conector com o módulo principal (4 vias)
 
 Na ordem física do conector montado no principal (a mesma tabela de
-`pinagem-e-montagem-esp32.md`, §8):
+`controlador-principal.md`, §8):
 
 | Pino | Cor | Sinal | Módulo principal (ESP32) | Este módulo (ESP32-C3) |
 |---|---|---|---|---|
@@ -350,7 +348,7 @@ Na ordem física do conector montado no principal (a mesma tabela de
   ocupado, sem calibração, refeição perdida). Os dois lados descartam a linha
   inteira se um campo vier fora da faixa — referência completa em
   `firmware/bettacare/feeder_link.h` e no
-  [README do firmware](../firmware/feeder-module/README.md#enlace-com-o-principal).
+  [README do firmware](../../firmware/feeder-module/README.md#enlace-com-o-principal).
 - O log de boot do ROM sai pelo `GPIO21` a 115200 baud a cada reset do C3 e
   chega ao principal como ruído a 9600. O parser de lá o descarta; não precisa
   suprimir. Depois do boot, o `GPIO21` é da UART1, e o console do sistema (a
@@ -360,8 +358,7 @@ Na ordem física do conector montado no principal (a mesma tabela de
 
 ## 8. Organização física: base, torre e topo
 
-O módulo é uma peça em três partes. Desenho, medidas e o que o modelador 3D
-precisa saber estão em [`modelagem-alimentador/`](./modelagem-alimentador/).
+O módulo é uma peça em três partes.
 
 | Parte | O que leva | Por quê |
 |---|---|---|
@@ -432,7 +429,7 @@ integrar.
 | 10 | `teste grao`, dez vezes, com um copo sob o bico | Console | Dez em dez: um grão por dose, visto pelo sensor |
 
 O console funciona pela USB ou pela rede, sem cabo (`POST /console`; ver o
-[README do firmware](../firmware/feeder-module/README.md#depuração-pela-rede)).
+[README do firmware](../../firmware/feeder-module/README.md#depuração-pela-rede)).
 
 **Faça a 1 e a 2 antes de qualquer outra coisa.** São as que evitam queimar um
 componente por engano de fiação.
@@ -441,8 +438,7 @@ componente por engano de fiação.
 
 ## Depois de montar
 
-1. O firmware já está na placa (gravado por OTA em 2026-10-02); as
-   atualizações seguem por `http://<IP>/update`, e o USB fica para
+1. O firmware é gravado por OTA, em `http://<IP>/update`; o USB fica para
    recuperação.
 2. Siga o roteiro de bancada com o módulo isolado — ele inclui a calibração.
 3. Sem calibração gravada, nenhuma refeição sai, nem a da agenda: o módulo
@@ -457,7 +453,7 @@ componente por engano de fiação.
 ## O que o firmware faz com esta montagem
 
 O que depende dos pinos e das peças daqui; o resto — agenda, limite de 24 h,
-recuperação, botão, tela — no [README do firmware](../firmware/feeder-module/README.md).
+recuperação, botão, tela — no [README do firmware](../../firmware/feeder-module/README.md).
 
 - **Primeira coisa do `setup()`:** `GPIO0`, `1`, `4` e `10` como saída em
   nível baixo. Os pull-downs cobrem o reset; o firmware assume dali em diante.

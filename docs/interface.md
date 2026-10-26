@@ -1,53 +1,42 @@
 # A interface (PWA)
 
-Referência da Fase 4.
-
----
-
-## Estrutura
-
 Next.js 16 com `output: 'export'`, servido pelo Hono no mesmo processo do
 servidor. Não há Next.js server, não há proxy, não há segundo container.
 
-Uma página só, com as telas trocadas por estado do cliente — como no app
-antigo. Com export estático isso também simplifica o service worker: há um
-único HTML a manter em cache e nenhuma navegação a interceptar.
+Uma página só, com as telas trocadas por estado do cliente. Com export
+estático isso também simplifica o service worker: há um único HTML a manter
+em cache e nenhuma navegação a interceptar.
 
 ```
 Início · Luminária · Ventoinha · Alimentador · Diagnóstico
                                                  └── Saúde · Registros
 ```
 
-Revisado em 2026-10-02 com o usuário usando o app de verdade:
+---
 
-- **Tudo que tem tela própria é tocável no Início**: a temperatura e o cartão
-  da ventoinha levam à Ventoinha; o cartão da luminária, à Luminária.
-- **Luminária**: os horários "Acende"/"Apaga" abrem o editor de horário. Até
-  aqui o servidor aceitava `PUT /api/settings`, mas a interface não tinha como
-  chamar — os horários eram só leitura.
-- **Ventoinha e temperatura**: status primeiro (mesma ordem da luminária),
-  depois a temperatura, que abre o editor dos limites. Um botão Ligar/Desligar
-  que troca de texto, e "Voltar ao automático" habilitado só no manual — antes
-  o mesmo botão virava "Voltar ao automático" com a ventoinha desligada, e não
-  existia "ligar". O histórico de temperatura mora aqui agora.
-- **Registros** junta o que eram Logs e Relatórios: período (hoje, 7 dias, 30
-  dias ou datas), nível, filtros extras recolhidos, lista agrupada por dia com
-  detalhes ao toque, e o download das planilhas com os mesmos filtros.
-- **Saúde** ganhou o ajuste "Atualização do aquário" (1, 2, 3 ou 5 s), que
-  grava `telemetry_interval_ms` na configuração.
-- **Alimentador** mostra "N de 3 refeições nas últimas 24 h", em âmbar com
-  "limite atingido" quando chega a 3. Nesse caso, "Alimentar agora" não
-  manda nada direto: abre a folha "Limite de refeições atingido", que explica
-  o risco e oferece "Alimentar mesmo assim" (`feeder.feed_now` com `force:
-  true`). É o único caminho para passar do limite — pelo botão do módulo, não
-  há.
+## Telas
 
-Revisado em 2026-10-22 (v1.4.0), a pedido do usuário depois de semanas de uso:
+### Início
 
-- **Ventoinha: histórico de verdade.** O gráfico antigo era uma média por hora,
-  sem como ler um valor. O novo é uma curva em que **tocar, arrastar (ou passar
+Tudo o que tem tela própria é tocável: a temperatura e o cartão da ventoinha
+levam à Ventoinha; o cartão da luminária, à Luminária.
+
+### Luminária
+
+- Os horários "Acende" e "Apaga" abrem o editor de horário (`PUT /api/settings`).
+- **Tempo aceso**: por hora nas últimas 24 h e por dia em 7 e 30 dias, com o
+  horário programado tracejado como referência. Vem de `telemetry_hourly`; a hora
+  em curso só entra depois de fechar.
+
+### Ventoinha
+
+- Status primeiro (na mesma ordem da luminária), depois a temperatura, que abre o
+  editor dos limites. Um botão Ligar/Desligar que troca de texto, e "Voltar ao
+  automático" habilitado só no manual.
+- **Histórico da temperatura.** Um seletor de período (24 h, 7 ou 30 dias)
+  governa dois cartões. O primeiro é uma curva em que **tocar, arrastar (ou passar
   o mouse) mostra a temperatura exata e o dia e a hora** daquele momento — acima
-  do gráfico, onde o dedo não cobre. O toque fixa o ponto (“Limpar” ou Esc
+  do gráfico, onde o dedo não cobre. O toque fixa o ponto ("Limpar" ou Esc
   solta); pelo teclado, as setas andam ponto a ponto. A rolagem vertical da
   página continua valendo por cima do gráfico; só o arraste na horizontal é
   dele. Mostra os limites de liga e desliga da ventoinha (só quando a água está
@@ -56,32 +45,58 @@ Revisado em 2026-10-22 (v1.4.0), a pedido do usuário depois de semanas de uso:
   que ninguém mediu) e mínima/média/máxima do período — mínima e máxima levam o
   cursor ao momento em que aconteceram. Há também uma tabela com a mesma série,
   para quem não usa o gráfico.
-- **Acionamentos da ventoinha.** Um segundo cartão, com o mesmo período do
-  gráfico: quantos foram, quanto tempo a ventoinha ficou ligada, duração e
-  variação média de temperatura, e a tabela — quando ligou, quando desligou,
-  quanto girou, de que temperatura partiu e onde chegou (com ▼ esfriou, ▲
-  esquentou ou ≈ estável, e o pico). Tocar numa linha a mostra no gráfico. A
-  rodada em curso conta o tempo ao vivo e mostra a temperatura de agora. Sem
-  nenhum acionamento, o cartão diz por quê: "a água ficou entre 21,9 e 28,8 °C,
-  sempre abaixo dos 29,0 °C em que a ventoinha liga".
-- **Luz acesa por dia foi para a Luminária** ("Tempo aceso"): por hora nas
-  últimas 24 h e por dia em 7 e 30 dias, com o horário programado tracejado.
+- A resolução é de 1 min em 24 h, e a série vem da telemetria bruta e da tabela
+  `fan_runs`, não do rollup horário (ver `GET /api/history/fan` em
+  [`api.md`](./api.md)). A faixa habitual da água (16–33 °C) não esconde leitura:
+  o que se plota é tudo o que é plausível (10–45 °C).
+- **Acionamentos.** O segundo cartão, com o mesmo período do gráfico: quantos
+  foram, quanto tempo a ventoinha ficou ligada, duração e variação média de
+  temperatura, e a tabela — quando ligou, quando desligou, quanto girou, de que
+  temperatura partiu e onde chegou (com ▼ esfriou, ▲ esquentou ou ≈ estável, e o
+  pico). Tocar numa linha a mostra no gráfico. A rodada em curso conta o tempo ao
+  vivo e mostra a temperatura de agora. Sem nenhum acionamento, o cartão diz por
+  quê: "a água ficou entre 21,9 e 28,8 °C, sempre abaixo dos 29,0 °C em que a
+  ventoinha liga".
 - O seletor de período fica **uma vez, acima dos cartões** que ele governa, e
   trocar de período não pisca: os cartões antigos esmaecem até os novos chegarem.
-- Cores: a linha da temperatura é um azul próprio (`--c-serie-temp`), não o
-  ciano de destaque — ciano e verde-água da ventoinha ficavam a ΔE 12 (abaixo
-  dos 15 que a visão normal precisa para distinguir duas séries); o azul fica a
-  ΔE 19. A luminária segue em âmbar, a ventoinha em verde-água.
+
+### Alimentador
+
+Mostra "N de 3 refeições nas últimas 24 h", em âmbar com "limite atingido"
+quando chega a 3. Nesse caso, "Alimentar agora" não manda nada direto: abre a
+folha "Limite de refeições atingido", que explica o risco e oferece "Alimentar
+mesmo assim" (`feeder.feed_now` com `force: true`). É o único caminho para
+passar do limite — pelo botão do módulo, não há.
+
+### Diagnóstico
+
+Concentra tudo o que é "olhar para trás".
+
+- **Saúde.** Lista dos componentes com pill de estado, valor corrente e "desde
+  HH:MM". Tocar abre o detalhe: histórico de transições daquele componente e os
+  eventos que ele gerou. Tem também o ajuste "Atualização do aquário" (1, 2, 3
+  ou 5 s), que grava `telemetry_interval_ms` na configuração.
+- **Registros.** Período (hoje, 7 dias, 30 dias ou datas), nível, filtros extras
+  recolhidos (componente, texto, origem), lista agrupada por dia com detalhes ao
+  toque, horário em `TZ_DISPLAY` e origem `device` ou `server` marcada. Daqui
+  saem as planilhas (eventos e medições, CSV para o Excel em português), com os
+  mesmos filtros.
+
+## Aparência
+
+Paleta escura — `#070d1a` de fundo, `#4cc3f7` de acento, âmbar para a
+luminária, verde-água para a ventoinha —, cards com borda de 1px, pills de
+estado e hero de temperatura. CSS puro, sem Tailwind: são poucas telas, e a
+folha inteira cabe em menos que a configuração da alternativa.
+
+A linha da temperatura é um azul próprio (`--c-serie-temp`), não o ciano de
+destaque: ciano e verde-água da ventoinha ficavam a ΔE 12 (abaixo dos 15 que a
+visão normal precisa para distinguir duas séries); o azul fica a ΔE 19.
 
 Os editores são folhas que sobem do rodapé (`components/Sheet.tsx`),
 renderizadas por portal no `body`: as telas animam com `transform`, e dentro
 delas um `position: fixed` ficaria preso, com os botões atrás da barra de
 navegação. Campos de hora e data são os seletores nativos do sistema.
-
-O desenho é o do app antigo, portado: `#070d1a` de fundo, `#4cc3f7` de acento,
-âmbar para a luminária, verde-água para a ventoinha, cards com borda de 1px,
-pills de estado, hero de temperatura. CSS puro, sem Tailwind: são quatro telas,
-e a folha inteira cabe em menos que a configuração da alternativa.
 
 ---
 
@@ -113,42 +128,58 @@ desinstale e instale o app de novo.
 `packages/contract/src/api.ts` define também a superfície do navegador, não só a
 do ESP32. O servidor e a interface tipam pelo mesmo módulo.
 
-É a mesma razão de sempre: no sistema antigo o formato do JSON estava escrito à
-mão em três lugares e os três já divergiam entre si.
+A razão é evitar divergência: com o formato do JSON escrito à mão em três
+lugares (firmware, servidor e interface), os três acabam divergindo.
 
 ---
 
 ## Atualização forçada
 
-A defesa tem três camadas, e as três precisam existir.
+O problema clássico: o service worker serve a versão em cache, e o usuário fica
+semanas numa build velha sem saber. A defesa tem três camadas, e as três
+precisam existir.
 
-**1. Cabeçalhos.** Definidos pelo Hono em `apps/server/src/static.ts`:
-`sw.js`, `version.json`, o HTML e o manifest são `no-store`; `/_next/static/**`
-é `immutable`. O `sw.js` é o crítico — um service worker em cache é um service
-worker que nunca se atualiza.
+**1. Cabeçalhos.** Definidos pelo Hono em `apps/server/src/static.ts` (tabela em
+[`api.md`](./api.md#cabeçalhos-de-cache)): `sw.js`, `version.json`, o HTML e o
+manifest são `no-store`; `/_next/static/**` é `immutable`. O `sw.js` é o crítico
+— um service worker em cache é um service worker que nunca se atualiza.
 
 **2. Carimbo de versão.** `scripts/stamp-version.mjs` roda depois do
-`next build` e faz duas coisas: escreve `out/version.json` com o `buildId`, e
-substitui `__BUILD_ID__` dentro de `out/sw.js`. O `buildId` nomeia o cache, então
-build nova invalida tudo sozinha. O script **falha alto** se o marcador não for
-encontrado: um `sw.js` sem carimbo prenderia o app na primeira build instalada
-para sempre.
+`next build` e faz duas coisas: escreve `out/version.json` e substitui
+`__BUILD_ID__` dentro de `out/sw.js`. O `version.json` **não** entra no
+precache:
+
+```json
+{ "buildId": "a3f9c21", "version": "1.4.0", "minBuild": "a1b2c33", "builtAt": "..." }
+```
+
+O `buildId` nomeia o cache do service worker, então build nova invalida tudo
+sozinha: a ativação apaga os caches de `buildId` diferente e chama
+`clients.claim()`. O script **falha alto** se o marcador não for encontrado: um
+`sw.js` sem carimbo prenderia o app na primeira build instalada para sempre.
 
 **3. O ciclo.** O app consulta `/version.json` na abertura, a cada retorno de
-foco e a cada 15 minutos.
+foco (`visibilitychange`) e a cada 15 minutos.
 
 | Situação | O que acontece |
 |---|---|
 | `buildId` diverge | faixa "Nova versão disponível · Atualizar" |
 | `buildId` corrente **anterior** ao `minBuild` | recarrega sozinho, sem perguntar |
 
-O `minBuild` fica nulo no caminho normal. É a válvula para quando uma versão
-quebrada foi ao ar ou o contrato da API mudou de forma incompatível — define-se
-`MIN_BUILD` no ambiente da CI e a frota inteira recarrega.
+O toque em "Atualizar" manda `SKIP_WAITING` ao worker em espera e recarrega no
+`controllerchange`, uma vez só e com trava — senão vira laço. O `minBuild` fica
+nulo no caminho normal; é a válvula para quando uma versão quebrada foi ao ar ou
+o contrato da API mudou de forma incompatível: define-se `MIN_BUILD` no ambiente
+da CI e a frota inteira recarrega.
 
 O service worker **não chama `skipWaiting` na instalação**. Trocar por baixo dos
 pés de quem está no meio de uma ação é como se perde estado; ele fica em espera
 até o toque do usuário, ou até a recarga forçada.
+
+O service worker é escrito à mão (~200 linhas), em vez de Serwist ou next-pwa. O
+requisito aqui é controle exato do momento do `skipWaiting` — justamente a parte
+que as bibliotecas abstraem —, e a dependência custaria mais em integração com
+`output: 'export'` do que economiza em código.
 
 ### Estratégias de cache
 
@@ -212,7 +243,9 @@ reconexão para ganhar pouco.
 
 ---
 
-## Verificado no navegador
+## Verificação
+
+### Verificado
 
 Com o servidor real, dados semeados e Postgres 17:
 
@@ -230,8 +263,8 @@ Com o servidor real, dados semeados e Postgres 17:
 - **atualização forçada**: com `minBuild` acima do build do cliente, a página
   recarregou sozinha, sem faixa e sem interação.
 
-Na revisão de 2026-10-02, com servidor local, Postgres 17 e um aquário
-simulado obedecendo aos comandos como o firmware:
+Com o servidor local, Postgres 17 e um aquário simulado obedecendo aos
+comandos como o firmware:
 
 - ligar e desligar a ventoinha confirmados em menos de 1 s; "Voltar ao
   automático" desabilitado no automático e habilitado no manual;
@@ -244,13 +277,13 @@ simulado obedecendo aos comandos como o firmware:
 - atualização a 1 s escolhida na Saúde: aplicada, 10 POSTs em 10 s, nenhum
   alarme falso.
 
-## Verificado em produção (2026-10-02)
+Em produção:
 
 - atrás do Cloudflare Access: é como o app é usado, e a mudança de
   configuração ficou registrada com o e-mail do cabeçalho
   `Cf-Access-Authenticated-User-Email`.
 
-## Não verificado
+### Não verificado
 
 - instalação como PWA no iOS e no Android (a heurística de instalabilidade
   depende do navegador real, não do headless);

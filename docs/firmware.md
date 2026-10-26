@@ -1,13 +1,20 @@
-# Firmware do ESP32
+# Firmware do ESP32 principal
 
-Referência da Fase 3. Complementa `arquitetura-observabilidade.md` e
-`api-servidor.md`.
+O firmware de produção está em `firmware/bettacare` (versão 2.1.2). Este
+documento explica como ele é organizado e por quê. A montagem física está em
+[`hardware/controlador-principal.md`](./hardware/controlador-principal.md); o
+módulo do alimentador, em
+[`firmware/feeder-module`](../firmware/feeder-module/README.md); o firmware de
+debug, em [`firmware/bettacare-debug`](../firmware/bettacare-debug/README.md);
+os testes de host, em [`firmware/test`](../firmware/test/README.md). O que o
+firmware troca com o servidor está em [`api.md`](./api.md) e
+[`arquitetura.md`](./arquitetura.md).
 
 ---
 
-## Os dois núcleos
+## 1. Os dois núcleos
 
-A decisão estrutural desta reescrita, e ela corrige um defeito real:
+A decisão estrutural do firmware:
 
 ```
 núcleo 1 — loop(), a cada 200 ms   núcleo 0 — net_task
@@ -20,11 +27,10 @@ núcleo 1 — loop(), a cada 200 ms   núcleo 0 — net_task
                                    └─ amostra o nível do botão (debounce)
 ```
 
-No firmware antigo tudo isso vivia num `loop()` só, com `delay(200)`, e o
-handshake TLS do MQTT bloqueava por até 6 segundos. Ou seja: **uma
-instabilidade de rede travava o botão físico e a histerese da ventoinha ao
-mesmo tempo**. Trocar MQTT por HTTP não resolveria — HTTP bloqueia igual. O
-que resolve é a separação.
+Uma chamada de rede bloqueia por segundos (conexão, DNS, TLS, *timeout*). Num
+`loop()` único, **uma instabilidade de rede travaria o botão físico e a
+histerese da ventoinha ao mesmo tempo** — o transporte, MQTT ou HTTP, não muda
+isso. O que resolve é a separação.
 
 Os dois núcleos não compartilham variáveis soltas. Conversam por três canais,
 todos em `app_state.h`:
@@ -37,7 +43,7 @@ todos em `app_state.h`:
 
 Os `ack` não usam `xQueue` porque uma fila só deixa tirar o item de vez: aqui o
 corpo do POST é montado com uma **cópia**, e eles só saem do vetor depois de o
-servidor responder `200` (UPGRADE/03, F1). Um `ack` perdido numa queda de rede
+servidor responder `200`. Um `ack` perdido numa queda de rede
 faria a interface dizer "comando expirou" para uma ação que funcionou.
 
 E mais dois recursos compartilhados, cada um com o próprio cuidado:
@@ -101,40 +107,39 @@ Amostrado por um `esp_timer` a cada 2 ms, fora do loop: a pressão conta depois
 de 30 ms seguidos em nível baixo, a soltura depois de 30 ms em nível alto, e o
 loop só consome as pressões já confirmadas. A interrupção por borda que existia
 antes aceitava como toque os picos que o 1-Wire do `GPIO19` induz no fio do
-`GPIO18` — era o relé trocando sozinho a cada ~5 s (UPGRADE/07; números em
-`pinagem-e-montagem-esp32.md`, §2).
+`GPIO18` — era o relé trocando sozinho a cada ~5 s (números em
+[`hardware/controlador-principal.md`](./hardware/controlador-principal.md), §2).
 
 ---
 
-## O que foi portado quase literalmente
+## 2. Princípios
 
-- **`fan.cpp`** — histerese, cooldown de 30 min, escalonamento progressivo e
-  failsafe de temperatura indisponível. É a lógica mais madura do projeto.
-  Mudou de onde vêm os limiares (agora de `device_config`, ou seja, do
-  servidor) e, na 2.0.3, o potenciômetro e o desligar — ver abaixo.
-- **`rtc_manager.cpp`** — a regra de **agir só na transição de período** está
-  intacta. É ela que faz um override manual sobreviver dentro da janela: sem
-  isso, apagar a luz às 14h faria a automação reacendê-la no segundo seguinte.
-- **`wifi_manager.cpp`** — AP de recuperação e credenciais em NVS.
+- **O servidor manda; a NVS é cache.** A configuração vem do servidor, e o
+  firmware guarda a última na NVS para operar sozinho quando ele está fora do ar.
+- **Comando é estado desejado**, nunca *toggle*: `light.set{on}`. Um *toggle*
+  reentregue inverte o estado duas vezes.
+- **Idempotência por `boot_id` + `seq`**: o `boot_id` (na NVS) muda a cada
+  reinício, e o `seq` é monotônico dentro dele.
+- **Agir só na transição de período** (`rtc_manager.cpp`). É o que faz um
+  override manual sobreviver dentro da janela: sem isso, apagar a luz às 14h
+  faria a automação reacendê-la no segundo seguinte.
+- **Histerese com cooldown** (`fan.cpp`): cooldown de 30 min, escalonamento
+  progressivo e *failsafe* de temperatura indisponível. Os limiares vêm de
+  `device_config`, ou seja, do servidor.
+- **Componente que some é notado.** O DS18B20 é re-sondado a cada 10 s — sem
+  isso, um sensor que caísse depois do boot deixaria `available` verdadeiro
+  para sempre e as leituras apenas parariam de mudar, e o requisito de "saber
+  quando um componente deixou de ser reconhecido" não teria como ser atendido.
+  O tacômetro é vigiado (`fan.tach_stalled`).
+- **Desligar a ventoinha é cortar a energia**, não zerar o PWM: o corte físico
+  do `GND` (`GPIO26`), lido de volta a cada 2 s — ver §5.
+- **Eventos estruturados** (`event_log`: severidade, componente e código), no
+  lugar de strings livres.
+- **Leitura implausível é descartada**, não aceita: ver §5.
 
-## O que mudou de verdade
+---
 
-| Antes | Agora |
-|---|---|
-| `mqtt_manager.*` | `api_client.*` — POST a cada 3 s, comandos na resposta |
-| `log_manager` (30 strings em RAM) | `event_log` — sev/comp/code estruturados |
-| Config no NVS como fonte de verdade | Servidor manda; NVS vira cache offline |
-| — | `boot_id` (NVS) + `seq` monotônico, para idempotência |
-| `light.toggle` pela rede | `light.set{on}` — estado desejado |
-| Sensor sondado só no boot | Re-sondagem a cada 10 s |
-| Tacômetro só reportado | Tacômetro **vigiado** (`fan.tach_stalled`) |
-| PWM 0 % para "desligar" | Corte físico do `GND` da ventoinha (`GPIO26`), lido de volta a cada 2 s |
-| Qualquer leitura do DS18B20 aceita | 85,0 °C de power-on descartado (`temp.reset_value`); fora de 10–45 °C descartada (`temp.implausible`); salto de mais de 2 °C só com a releitura confirmando (2.0.2) |
-
-Sobre a re-sondagem: antes, um DS18B20 que caísse depois do boot deixava
-`available` verdadeiro para sempre e as leituras apenas paravam de mudar. O
-requisito de "saber quando um componente deixou de ser reconhecido" não tinha
-como ser atendido sem isso.
+## 3. Conversa com o servidor
 
 ### O `seq` e o reenvio
 
@@ -158,6 +163,10 @@ isso seriam requisições a cada segundo sem propósito. Já a falha de rede (se
 resposta) recua no máximo até 10 s: no Wi-Fi do aquário ela passa na tentativa
 seguinte, e esperar 30 s só atrasava um comando que estava na fila (2.1.1). O
 aquário segue operando sozinho e volta a falar quando houver com quem.
+
+---
+
+## 4. Rede
 
 ### Wi-Fi ruim (2.1.1)
 
@@ -191,7 +200,7 @@ cada elo disso:
   últimos `id`s: um que ainda está na fila é ignorado; um já executado é
   confirmado de novo, sem executar — uma alimentação nunca sai duas vezes por
   causa de uma resposta perdida. Num reinício essa memória se perde, e quem
-  cuida é o servidor (`cmd.interrupted`, ver `docs/arquitetura-observabilidade.md`).
+  cuida é o servidor (`cmd.interrupted`, ver [`arquitetura.md`](./arquitetura.md#3-ciclo-de-vida-do-comando)).
 - **Diagnóstico que não se perde.** Eventos de Wi-Fi sobrevivem a um POST que
   falhou (antes, `info`/`warn` iam embora junto, e o primeiro POST depois de
   reassociar costuma falhar: em 69 h com 10 quedas, nenhum `wifi.disconnected`
@@ -206,7 +215,7 @@ cada elo disso:
   botão e ver o número mudar é o teste de bancada do pot, sem depender do
   servidor.
 
-### Vigia de rede, e o que ainda não se explica (2.1.2)
+### Vigia de rede (2.1.2)
 
 Oito dias de produção depois da 2.1.1 (banco de 2026-10-14 a 22) mostraram que
 "o controlador cai" não é reinício: houve **um** reset em oito dias (power-on,
@@ -243,38 +252,35 @@ episódio explicável:
   "degradado" com o botão no mínimo. Agora diz "no mínimo, onde a ventoinha
   desliga pelo botão; se ele não está no mínimo, confira o fio do cursor".
 
-**O que os dados não explicam, e não vamos fingir que sim:** a luminária. As 33
-trocas de oito dias batem com o horário e com o botão; só `light_set` escreve
-no GPIO23, e cada mudança vira evento. Um liga-e-desliga rápido que o firmware
-não vê só pode estar fora dele: queda de energia na tomada, ou o SSR (a corrente
-de fuga dele com a carga desligada pode manter o controlador da luminária
-meio acordado e contar um clique). A 2.1.2 só garante que **o firmware não
-reinicia com a luz acesa**.
+---
 
-### O limite de refeições do alimentador (2.1.0)
+## 5. Sensores e atuadores
 
-O módulo do alimentador conta as refeições de 24 h — agenda, botão e app — e
-recusa a quarta. O lado de cá do enlace acompanha o protocolo dele
-(`feeder_link.h` tem a referência; o firmware do módulo, em
-`firmware/feeder-module/`, o [README de lá](../firmware/feeder-module/README.md)):
+### O termômetro (2.0.2)
 
-- **`FEED [grãos] [FORCE]`.** O `feeder.feed_now` com `force: true` — o
-  "alimentar mesmo assim" do app — vai com `FORCE`, e registra
-  `feeder.limit_overridden`. Sem `FORCE`, o módulo decide.
-- **`PONG` com as refeições em 24 h** no fim; vão no bloco `feeder` do POST
-  como `meals_24h`. Um módulo antigo, sem o campo, continua aceito.
-- **`FED` com motivo e origem.** `VAZIO` vira `feeder.hopper_empty` (erro),
-  `SENSOR` vira `feeder.sensor_fault` — a refeição saiu, contada pelo servo —,
-  e a mensagem diz de onde veio o pedido (agenda, recuperação, botão, app).
-- **`DENIED`**, a recusa: `LIMITE` vira `feeder.limit_reached`, `PERDIDA`
-  (refeição da agenda que não deu para recuperar) vira `feeder.meal_missed`, e
-  `OCUPADO`, `CALIBRAR` ou um motivo que este firmware ainda não conhece viram
-  `feeder.feed_denied`, com o motivo na mensagem. Nada de recusa silenciosa.
+O CRC-8 do DS18B20 deixa passar, por acaso, 1 em cada 256 quadros
+corrompidos. Em produção apareceram dois -48,00 °C (registrador `0xFD00`)
+entre leituras de 27,13 °C, cinco minutos depois de um boot, sem nenhum
+`temp.*` em volta: o firmware os aceitou como leitura válida, e eles entraram
+no gráfico.
 
-Os campos novos são opcionais dos dois lados: firmware 2.1.0 com módulo antigo,
-ou o contrário, só perdem a informação nova.
+- **Faixa possível:** fora de 10–45 °C (a água desta instalação não sai disso;
+  `TEMP_PLAUSIBLE_MIN_C`/`MAX_C` no `config.h` para outra), a leitura é
+  descartada e conta como falha — três seguidas, sensor perdido. O evento
+  `temp.implausible` leva os 9 bytes crus do scratchpad, para separar CRC fraco
+  de ruído no fio.
+- **Salto:** uma leitura a mais de 2 °C da anterior não é aceita de cara. O
+  valor anterior fica, a conversão seguinte sai na hora (sem esperar os 5 s), e
+  o salto só vale se ela confirmar, a 0,5 °C. Não confirmou: `temp.spike_discarded`.
+  É o que pega o quadro corrompido que caia dentro da faixa, um 20 °C por
+  exemplo. Uma mudança real atrasa ~1 s.
+- **Leitura pelo endereço:** o `getTempCByIndex()` refazia a busca no 1-Wire a
+  cada conversão; agora o endereço é lido uma vez, na sondagem. Menos tráfego
+  no fio, menos chance de corromper.
 
-### A ventoinha desligada de verdade, e o potenciômetro que responde (2.0.3)
+O servidor confere a mesma faixa de novo (ver [`arquitetura.md`](./arquitetura.md#5-tolerância-a-dado-ruim)).
+
+### Ventoinha e potenciômetro (2.0.3)
 
 **Desligar solta a linha de PWM.** O corte de energia é no retorno (pino 1,
 `GPIO26`), e o PWM passa por um MOSFET que inverte o sinal. Até a 2.0.2,
@@ -300,31 +306,11 @@ evento `pot.fan_speed` sai quando a mão para (eram 184 num dia de bancada). Um
 comando do app, ou a volta ao automático da agenda, tira o comando dele de
 novo: vale o último.
 
-### O termômetro: leitura que passou no CRC ainda pode ser lixo (2.0.2)
+---
 
-O CRC-8 do DS18B20 deixa passar, por acaso, 1 em cada 256 quadros
-corrompidos. Em produção apareceram dois -48,00 °C (registrador `0xFD00`)
-entre leituras de 27,13 °C, cinco minutos depois de um boot, sem nenhum
-`temp.*` em volta: o firmware os aceitou como leitura válida, e eles entraram
-no gráfico.
+## 6. Alimentador
 
-- **Faixa possível:** fora de 10–45 °C (a água desta instalação não sai disso;
-  `TEMP_PLAUSIBLE_MIN_C`/`MAX_C` no `config.h` para outra), a leitura é
-  descartada e conta como falha — três seguidas, sensor perdido. O evento
-  `temp.implausible` leva os 9 bytes crus do scratchpad, para separar CRC fraco
-  de ruído no fio.
-- **Salto:** uma leitura a mais de 2 °C da anterior não é aceita de cara. O
-  valor anterior fica, a conversão seguinte sai na hora (sem esperar os 5 s), e
-  o salto só vale se ela confirmar, a 0,5 °C. Não confirmou: `temp.spike_discarded`.
-  É o que pega o quadro corrompido que caia dentro da faixa, um 20 °C por
-  exemplo. Uma mudança real atrasa ~1 s.
-- **Leitura pelo endereço:** o `getTempCByIndex()` refazia a busca no 1-Wire a
-  cada conversão; agora o endereço é lido uma vez, na sondagem. Menos tráfego
-  no fio, menos chance de corromper.
-
-O servidor confere a mesma faixa de novo (ver `api-servidor.md`).
-
-### O alimentador: só com ele no fio (2.0.1)
+### Presença do módulo (2.0.1)
 
 O firmware só fala do módulo do alimentador quando ele está lá, nos dois
 sentidos:
@@ -348,9 +334,34 @@ fio quieto e ainda diferencia os dois casos.
 
 Na bancada, `/status` mostra `feeder.present`: falso com o conector vazio.
 
+### Limite de refeições (2.1.0)
+
+O módulo do alimentador conta as refeições de 24 h — agenda, botão e app — e
+recusa a quarta. O lado de cá do enlace acompanha o protocolo dele
+(`feeder_link.h` tem a referência; o firmware do módulo, em
+`firmware/feeder-module/`, o [README de lá](../firmware/feeder-module/README.md)):
+
+- **`FEED [grãos] [FORCE]`.** O `feeder.feed_now` com `force: true` — o
+  "alimentar mesmo assim" do app — vai com `FORCE`, e registra
+  `feeder.limit_overridden`. Sem `FORCE`, o módulo decide.
+- **`PONG` com as refeições em 24 h** no fim; vão no bloco `feeder` do POST
+  como `meals_24h`. Um módulo antigo, sem o campo, continua aceito.
+- **`FED` com motivo e origem.** `VAZIO` vira `feeder.hopper_empty` (erro),
+  `SENSOR` vira `feeder.sensor_fault` — a refeição saiu, contada pelo servo —,
+  e a mensagem diz de onde veio o pedido (agenda, recuperação, botão, app).
+- **`DENIED`**, a recusa: `LIMITE` vira `feeder.limit_reached`, `PERDIDA`
+  (refeição da agenda que não deu para recuperar) vira `feeder.meal_missed`, e
+  `OCUPADO`, `CALIBRAR` ou um motivo que este firmware ainda não conhece viram
+  `feeder.feed_denied`, com o motivo na mensagem. Nada de recusa silenciosa.
+
+Os campos novos são opcionais dos dois lados: firmware 2.1.0 com módulo antigo,
+ou o contrário, só perdem a informação nova.
+
 ---
 
-## Verificado
+## 7. Verificação
+
+### Verificado
 
 - **Compila** contra ESP32 core 3.3.8 e ArduinoJson 7.4.3, sem nenhum aviso nos
   arquivos do projeto mesmo com `--warnings all`: 1.160.846 bytes (88% do
@@ -392,7 +403,7 @@ Na bancada, `/status` mostra `feeder.present`: falso com o conector vazio.
   válida e renovada a cada ~5 s, POST com 200; ventoinha desligada com o
   tacômetro em 0 rpm por um minuto inteiro.
 
-## Não verificado — exige hardware
+### Não verificado — exige hardware
 
 - a janela de 5 s até acusar `fan.tach_stalled` com a ventoinha travada de
   verdade;
@@ -405,16 +416,26 @@ Na bancada, `/status` mostra `feeder.present`: falso com o conector vazio.
   (1.0.0-beta, 2026-10-02) e roda na placa dele, mas o mecanismo ainda não foi
   montado, e os dois lados do enlace só se encontraram em teste de host.
 
+### O que os dados não explicam
+
+A luminária. As 33 trocas de oito dias batem com o horário e com o botão; só
+`light_set` escreve no GPIO23, e cada mudança vira evento. Um liga-e-desliga
+rápido que o firmware não vê só pode estar fora dele: queda de energia na
+tomada, ou o SSR (a corrente de fuga dele com a carga desligada pode manter o
+controlador da luminária meio acordado e contar um clique). A 2.1.2 só garante
+que **o firmware não reinicia com a luz acesa**.
+
+---
+
+## 8. Antes de gravar
+
+1. `cp config.example.h config.h` e preencher: `WIFI_SSID`, `WIFI_PASSWORD`,
+   `SERVER_HOST` (IP do servidor), `SERVER_API_TOKEN` (idêntico ao
+   `DEVICE_INGEST_TOKEN` do servidor), `API_AUTH_TOKEN` e `OTA_PASSWORD`.
+2. Use uma **senha de OTA própria**, que não seja reaproveitada de outro lugar.
+3. O flash está em 87%. Há folga para OTA (as duas partições de app têm o mesmo
+   tamanho), mas pouca para crescer — vale ficar de olho.
+
 **Testar em bancada antes de gravar no que está no aquário.** Para investigar
 um comportamento estranho, há o firmware de debug em `firmware/bettacare-debug`
 (ver o `README.md` de lá), gravável por OTA.
-
-## Antes de gravar
-
-1. `cp config.example.h config.h` e preencher: `WIFI_SSID`, `WIFI_PASSWORD`,
-   `SERVER_HOST` (IP do homelab), `SERVER_API_TOKEN` (idêntico ao
-   `DEVICE_INGEST_TOKEN` do servidor), `API_AUTH_TOKEN` e `OTA_PASSWORD`.
-2. **Rotacionar a senha de OTA.** A do repositório antigo esteve versionada em
-   texto claro e deve ser considerada comprometida.
-3. O flash está em 87%. Há folga para OTA (as duas partições de app têm o mesmo
-   tamanho), mas pouca para crescer — vale ficar de olho.

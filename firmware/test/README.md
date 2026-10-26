@@ -9,8 +9,7 @@ por linha — não uma reimplementação dele.
 sh firmware/test/run.sh
 ```
 
-Precisa de um `g++` com C++17 no `PATH`. No Windows desta máquina é o MinGW em
-`C:\mingw64\bin`; no Linux, o `g++` do sistema. Os binários vão para
+Precisa de um `g++` com C++17 no `PATH`. No Windows é o MinGW; no Linux, o `g++` do sistema. Os binários vão para
 `firmware/test/build/`, que o `.gitignore` já cobre.
 
 ## O que cobrem

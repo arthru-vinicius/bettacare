@@ -5,10 +5,8 @@ feixe infravermelho. Funciona sozinho — agenda, relógio, botão e tela
 próprios — e, com o cabo de 4 vias, conversa com o ESP32 principal, que leva
 tudo ao servidor e ao app.
 
-Montagem e pinos em [`docs/pinagem-alimentador-modulo.md`](../../docs/pinagem-alimentador-modulo.md);
-a estrutura impressa (base, torre e topo) em
-[`docs/modelagem-alimentador/`](../../docs/modelagem-alimentador/). O lado do
-principal do enlace é `firmware/bettacare/feeder_link.h`.
+Montagem e pinos em [`docs/hardware/modulo-alimentador.md`](../../docs/hardware/modulo-alimentador.md).
+O lado do principal do enlace é `firmware/bettacare/feeder_link.h`.
 
 > **Beta:** a lógica está coberta por testes de host, e o firmware compila sem
 > nenhum aviso. Nada disso substitui a bancada: o mecanismo ainda não existe
@@ -123,9 +121,8 @@ docker logs -f bettacare-feeder-log
 
 Também dá para o módulo **empurrar** cada linha por UDP, com `DEBUG_LOG_HOST`
 (o IP do PC) no `config.h` e o receptor em `MODO=udp` (`-p 5514:5514/udp`).
-No PC da bancada (2026-10-02) o firewall do Windows barra esse UDP — a regra
-do Docker Desktop só vale para redes "Públicas", e a rede é "Privada" —, por
-isso o modo HTTP é o padrão.
+No Windows, o firewall pode barrar esse UDP — a regra do Docker Desktop só
+vale para redes "Públicas" —, por isso o modo HTTP é o padrão.
 
 No primeiro boot de todos (NVS vazia), o M1 dá o pulso diário em ~1 min: é o
 "nunca pulsou" do anti-empacamento, e não se repete por 24 h.
@@ -143,7 +140,7 @@ desconectado.
 2. **Sensor:** `teste sensor` precisa dar "Autoteste ok". Depois, `teste feixe
    20` e passe grãos pelo tubo, à mão: cada um tem de aparecer uma vez só. Grão
    que não aparece, ou que conta dois, é o trimpot do LM393 ou o alinhamento
-   do par IR (`docs/pinagem-alimentador-modulo.md`, §4).
+   do par IR (`docs/hardware/modulo-alimentador.md`, §4).
 3. **Calibração:** `calibrar`, e ajuste pelo botão — 1× +2°, 3× −2°, 2× alterna
    entre repouso e despejo, segurar 2 s grava. O slide anda devagar até cada
    ângulo. Repouso: bolso inteiro sob o reservatório. Despejo: bolso inteiro
@@ -211,7 +208,7 @@ principal. Por isso o `teste grao` é com o copo — no aquário, ele alimenta.
 
 ## Regras de alimentação
 
-Decididas pelo Arthur em 2026-10-02; os números estão em `params.h`.
+Os números estão em `params.h`.
 
 - **Agenda:** dois horários em hora cheia (fábrica: 05 h e 17 h, 5 grãos). A
   refeição sai na hora e até 1 h depois dela (o módulo pode estar ocupado ou
@@ -263,8 +260,8 @@ o enlace não tem checksum, e um dígito trocado por ruído não pode virar
 sh firmware/feeder-module/test/run.sh
 ```
 
-Precisa de um `g++` com C++17 no `PATH` (nesta máquina, o MinGW em
-`C:\mingw64\bin`). Cada teste inclui o `.cpp` real.
+Precisa de um `g++` com C++17 no `PATH` (no Windows, o MinGW). Cada teste
+inclui o `.cpp` real.
 
 | Teste | Cenários |
 |---|---|
@@ -275,8 +272,7 @@ Precisa de um `g++` com C++17 no `PATH` (nesta máquina, o MinGW em
 
 ## Verificado na placa (2026-10-02)
 
-Gravado por OTA na Super Mini da bancada (`192.168.100.47`), ainda sem nada
-ligado: boot, Wi-Fi e hora pelo NTP; DS3231 e tela ausentes reconhecidos sem
+Gravado por OTA na Super Mini da bancada, ainda sem nada ligado: boot, Wi-Fi e hora pelo NTP; DS3231 e tela ausentes reconhecidos sem
 travar; agenda de fábrica, "não calibrado" e 0 de 3 em `estado`; `teste sensor`
 reprovando com o sensor desconectado; o pulso do M1 do primeiro boot; console
 pela rede; o log atravessando um `reiniciar` com a numeração seguindo; o

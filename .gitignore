@@ -7,6 +7,12 @@ firmware/*/config.h
 !.env.example
 
 # =============================================================================
+# Memória de trabalho — contexto, planos e anotações que não pertencem ao
+# repositório público (contrato do homelab, rodada de confiabilidade etc.)
+# =============================================================================
+/memory/
+
+# =============================================================================
 # Node / monorepo
 # =============================================================================
 node_modules/

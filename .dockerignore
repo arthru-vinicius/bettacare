@@ -24,6 +24,7 @@ node_modules
 .claude
 
 docs
+memory
 tmp
 # Os masters da arte (3 MB) só servem ao gerador de ícones, rodado à mão. O que
 # a imagem precisa são os PNGs já gerados em apps/web/public/icons.
@@ -37,7 +38,7 @@ test-results
 playwright-report
 
 # Segredos nunca entram na imagem — toda configuração vem de variável de
-# ambiente em runtime, como o contrato do homelab exige.
+# ambiente em runtime.
 .env
 .env.*
 !.env.example

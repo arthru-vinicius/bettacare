@@ -1,6 +1,20 @@
 # Empacotamento e entrega
 
-Referência da Fase 5.
+Como o BettaCare vira uma imagem, como a CI a publica e como se sobe uma versão.
+
+---
+
+## Ferramental do monorepo
+
+| Camada | Escolha |
+|---|---|
+| Gerenciador de pacotes | **pnpm** com workspaces |
+| Orquestração de tarefas | **Turborepo** (`turbo build`, `turbo dev`) |
+| Bundler do Next | **Turbopack** (`next build --turbopack`) |
+
+Vale separar dois nomes que se confundem: **Turborepo** é o orquestrador de
+tarefas do monorepo, **Turbopack** é o bundler do Next. São coisas diferentes e
+usamos as duas.
 
 ---
 
@@ -54,8 +68,6 @@ visível. Sem limite, o Node enxerga a RAM inteira do host e deixa o heap
 crescer, porque nada o pressiona a coletar. Com o limite, ele lê o cgroup e se
 comporta.
 
-Isto corrigiu a estimativa de ~80 MB que estava em `respostas-bettacare.md`.
-
 ---
 
 ## Workflows
@@ -95,7 +107,9 @@ stack.
 
 ---
 
-## Verificado
+## Verificação
+
+### Verificado
 
 Com a imagem final rodando contra Postgres 17:
 
@@ -110,17 +124,17 @@ Com a imagem final rodando contra Postgres 17:
   no `docker compose down`;
 - uid `1000`, migrations e export do PWA presentes na imagem.
 
-## Verificado em produção (2026-10-02)
+### Verificado em produção
 
 - o push para o `ghcr.io` pela CI: v1.1.0, v1.1.1 e v1.1.2, cada uma com CI e
   Release verdes e a imagem conferida por dentro;
-- o deploy pelo `homelab update`, com as migrations aplicadas numa transação
-  e conferidas pelo `homelab-c4` contra o banco;
+- o deploy pela CLI do servidor, com as migrations aplicadas numa transação
+  e conferidas contra o banco;
 - o app atrás do Cloudflare Tunnel e do Access: é assim que ele é usado, e a
-  mudança de configuração de 2026-10-02 ficou registrada com o e-mail que
-  chegou no cabeçalho do Access.
+  mudança de configuração ficou registrada com o e-mail que chegou no
+  cabeçalho do Access.
 
-## Não verificado
+### Não verificado
 
 - restart do container após reboot do servidor com o Postgres ainda subindo —
   o backoff foi exercitado só em desenvolvimento.

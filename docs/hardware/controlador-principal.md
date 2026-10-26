@@ -3,23 +3,14 @@
 Guia de montagem física do BettaCare. **Este é o documento a seguir com o ferro
 de solda na mão.**
 
-> **Revisado em 2026-08-21.** A versão anterior deste guia continha três erros
-> de projeto que produziam falhas intermitentes e silenciosas — o resistor de
-> 220 Ω na entrada do SSR, o PWM da ventoinha em push-pull, e o pull-up do
-> 1-Wire tratado como opcional. O raciocínio completo, com as medições e as
-> especificações que sustentam cada correção, está em
-> [`UPGRADE/02-hardware-e-ligacoes.md`](../UPGRADE/02-hardware-e-ligacoes.md).
-> Aqui fica só o "como montar".
->
-> **Atualizado em 2026-10-01**, depois da montagem em bancada: corte de energia
-> da ventoinha no `GPIO26` (o `GPIO27` queimou), botão lido por amostragem e
-> não mais por interrupção (§2), enlace com o alimentador implementado do lado
-> do ESP32 (§8) e o firmware de debug para investigar defeitos sem tirar o
-> ESP32 da placa ("Depois de montar").
+> **Três armadilhas que este guia evita**, todas de falha intermitente e
+> silenciosa: resistor de 220 Ω em série na entrada do SSR (o SSR já tem o seu,
+> §4), pull-up do 1-Wire tratado como opcional (é obrigatório, §5) e PWM da
+> ventoinha em push-pull (exige dreno aberto, §7).
 
 O módulo opcional de alimentação de precisão (rosca doseadora + sensor de
 contagem) tem pinagem própria, num ESP32-C3 Super Mini separado — ver
-[`pinagem-alimentador-modulo.md`](./pinagem-alimentador-modulo.md). Este
+[`modulo-alimentador.md`](./modulo-alimentador.md). Este
 documento só trata dos dois pinos do lado do ESP32 que interligam os dois
 módulos (seção 8).
 
@@ -60,8 +51,8 @@ correta e não deve ser alterada.**
 
 > **Interligação com o módulo do alimentador** — ver §8. `GPIO4` e `GPIO16` não
 > conflitam com nenhum dos nove acima nem com *strapping*/flash. O lado do
-> ESP32 principal já está implementado (`feeder_link.cpp`); o que falta é o
-> firmware do próprio módulo.
+> ESP32 principal está em `feeder_link.cpp`; o firmware do próprio módulo, em
+> `firmware/feeder-module/`.
 
 | GPIO | Função | Observação |
 |---|---|---|
@@ -97,8 +88,6 @@ correta e não deve ser alterada.**
 | Capacitor eletrolítico 470 µF / 16 V | 1 |
 | Conector JST-XH 4 vias, com chave (macho + fêmea) | 1 par |
 
-> **Sai da montagem antiga:** o resistor de 220 Ω entre o GPIO23 e o `SSR +`.
-
 > O conector JST-XH só é necessário se o módulo do alimentador for montado —
 > ver §8. Sem ele, o ESP32 funciona exatamente como hoje.
 
@@ -106,7 +95,7 @@ correta e não deve ser alterada.**
 
 ## 1. Alimentação
 
-A lacuna mais séria da montagem anterior. O ESP32 consome picos de centenas de
+O ESP32 consome picos de centenas de
 miliampères durante a transmissão Wi-Fi, em rajadas de poucos milissegundos.
 Um capacitor de 100 nF não sustenta rajada nenhuma — ele filtra ruído, não
 entrega energia. Sem reservatório, cada transmissão puxa o trilho para baixo, e
@@ -170,7 +159,7 @@ de 30 ms seguidos em nível alto. Um toque humano (80 ms ou mais) sempre passa;
 um pico de microssegundos nunca soma 15 amostras seguidas.
 
 > **Por que não interrupção na borda.** Era assim até 2026-10-01, e foi a causa
-> do relé que mudava de estado sozinho a cada ~5 s (UPGRADE/07). O fio do
+> do relé que mudava de estado sozinho a cada ~5 s. O fio do
 > `GPIO18` corre ao lado do `GPIO19`, o 1-Wire do DS18B20, e cada bit-slot do
 > 1-Wire induz um pico de microssegundos no botão: medidos 16 picos no pedido
 > de conversão e 152 na leitura, a cada 5 s — milhares por hora. A interrupção
@@ -225,8 +214,8 @@ pull-up do módulo.
 
 O SSR-40DA aceita **3 a 32 V DC** no controle e consome até **7,5 mA**. A faixa
 larga existe porque a entrada já é limitada internamente — **o SSR já tem o
-resistor de que precisa, dentro dele.** Foi por isso que o resistor de 220 Ω da
-montagem anterior saiu: ele não protegia nada e só tirava margem.
+resistor de que precisa, dentro dele.** Por isso não há resistor de 220 Ω em série na entrada:
+ele não protegeria nada e só tiraria margem.
 
 ### Opção A — Robusta (recomendada)
 
@@ -304,9 +293,6 @@ GND ──────────── GND (preto)
 - Capacitor de 100 nF entre `VCC` e `GND`, junto do sensor
 
 > ### O pull-up não é opcional
->
-> A versão anterior deste guia dizia "se o sensor não tiver pull-up embutido,
-> adicionar 4,7 kΩ". Esse "se" causava montagens sem o resistor.
 >
 > O 1-Wire **não funciona sem pull-up** — a linha é de dreno aberto e o
 > resistor é quem gera o nível alto. As sondas DS18B20 à prova d'água de três
@@ -449,7 +435,7 @@ A norma, §2.1.3: *dois pulsos por volta, saída open-collector ou open-drain,* 
 a placa-mãe fornece o pull-up (a 12 V, num PC — o que aqui **destruiria** o
 ESP32).
 
-A montagem anterior usava só o pull-up interno do ESP32, de **~45 kΩ**. Com essa
+O pull-up interno do ESP32 é de **~45 kΩ** e não basta. Com essa
 resistência e a capacitância do cabo, a borda de subida fica lenta — e uma borda
 lenta atravessando o limiar de comutação capta ruído, que está logo ali, na
 chave de 25 kHz da própria ventoinha. Cada oscilação vira um pulso contado a
@@ -545,7 +531,7 @@ GND comum ───────────────────────�
   `GPIO26` em alta impedância, o pullup mantém o MOSFET ligado e a ventoinha
   energizada por padrão — só um comando explícito de "desligar" corta.
 
-> **`GPIO27` era o pino original — queimou em campo** (UPGRADE/07). Causa mais
+> **`GPIO27` era o pino original — queimou em campo**. Causa mais
 > provável: o AO3400 tem gate e dreno em pinos adjacentes no SOT-23, e um
 > curto acidental de solda entre eles durante a montagem expôs o `GPIO27` a
 > 12V através de só 1kΩ — tensão muito acima do que o pino aguenta. O resto do
@@ -562,7 +548,7 @@ GND comum ───────────────────────�
 
 O módulo de alimentação de precisão é fisicamente separado — RTC, botão e
 display próprios, controlador próprio (ESP32-C3 Super Mini). Pinagem completa
-dele em [`pinagem-alimentador-modulo.md`](./pinagem-alimentador-modulo.md);
+dele em [`modulo-alimentador.md`](./modulo-alimentador.md);
 aqui fica só o lado do ESP32.
 
 Conector JST-XH de 4 vias, na **ordem física do conector usado nesta
@@ -577,14 +563,12 @@ montagem**:
 
 A última coluna é do ESP32-C3 — chip diferente, numeração independente. Os
 resistores ficam do lado do módulo; o porquê, e o resto da montagem dele, em
-[`pinagem-alimentador-modulo.md`](./pinagem-alimentador-modulo.md), §7.
+[`modulo-alimentador.md`](./modulo-alimentador.md), §7.
 
 > **Sobre as cores:** não é a combinação "óbvia" (o costume seria vermelho no
 > 12V), mas é a que veio no conector comprado. Os dois lados do cabo precisam
 > ser crimpados com esta mesma correspondência de cor e pino — o conector é
-> fêmea/macho e não força uma ordem única sozinho. Até 2026-10-01 o diagrama
-> deste guia numerava `12V` como pino 1 e `GND` como pino 2; vale a ordem da
-> tabela, que é a do conector montado.
+> fêmea/macho e não força uma ordem única sozinho.
 
 - Por que `GPIO4`/`GPIO16` e não os pinos "padrão" da UART2 (`GPIO17`/`GPIO16`)?
   `GPIO17` já é o PWM da ventoinha (§7) — trocar de pino evita reabrir uma
@@ -603,7 +587,7 @@ resistores ficam do lado do módulo; o porquê, e o resto da montagem dele, em
   no fio, o ESP32 não manda nem `PING`, e o POST não leva o bloco do
   alimentador. Por isso **não ponha pull-up externo no `GPIO16`**, e, do lado
   do módulo, o resistor em série no TX dele fica em até 2,2 kΩ (ver
-  [`pinagem-alimentador-modulo.md`](./pinagem-alimentador-modulo.md)).
+  [`modulo-alimentador.md`](./modulo-alimentador.md)).
 - O enlace não tem checksum, e o `GPIO16` corre ao lado do PWM de 25 kHz no
   `GPIO17`. O pull-down também segura o fio vazio quieto (sem ele, vira
   antena), e o firmware descarta qualquer linha com campo fora da faixa do
@@ -632,7 +616,7 @@ desconectado**. Se o firmware novo quebrar a rede, o OTA não salva.
 **Se você só fizer três medições, faça as de número 1, 2 e 3.** São multímetro
 e cobrem as três interfaces mais críticas.
 
-A medição 8 é a que fecha o ciclo: o firmware agora reporta
+A medição 8 é a que fecha o ciclo: o firmware reporta
 `esp_reset_reason()` na telemetria, e é isso que transforma a suspeita de
 brownout em fato — ou a descarta.
 
@@ -642,8 +626,7 @@ brownout em fato — ou a descarta.
 
 1. `cp config.example.h config.h` e preencha `WIFI_SSID`, `WIFI_PASSWORD`,
    `SERVER_HOST`, `SERVER_API_TOKEN`, `API_AUTH_TOKEN` e `OTA_PASSWORD`.
-2. **Rotacione a senha de OTA.** A do repositório antigo esteve versionada em
-   texto claro e deve ser considerada comprometida.
+2. Use uma **senha de OTA própria**, que não seja reaproveitada de outro lugar.
 3. Grave, e rode o **diagnóstico geral** pela aba Diagnóstico do app: ele varre
    o barramento 1-Wire, sonda o I²C, testa a NVS, lê o ADC de ponta a ponta e
    devolve um relatório componente a componente.

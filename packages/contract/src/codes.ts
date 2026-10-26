@@ -58,7 +58,7 @@ export const EVENT_CODES = {
     comp: "system",
     sev: "error",
     label: "Reinício por falha, não comandado",
-    hint: "Brownout aponta para alimentação (ver docs/pinagem-e-montagem-esp32.md §1); watchdog aponta para software.",
+    hint: "Brownout aponta para alimentação (ver docs/hardware/controlador-principal.md §1); watchdog aponta para software.",
   },
   "system.ready": {
     comp: "system",
@@ -469,7 +469,7 @@ export const EVENT_CODES = {
   },
   // Só em registros antigos: até a v1.1.0 o servidor tratava o topo do curso
   // como defeito. Saiu porque o ADC do ESP32 satura em 4095 ali em qualquer
-  // montagem boa (UPGRADE/02, §8).
+  // montagem boa.
   "pot.out_of_range": {
     comp: "pot",
     sev: "warn",

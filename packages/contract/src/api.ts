@@ -99,7 +99,7 @@ export const overviewResponseSchema = z.object({
       config_version: z.int(),
       /**
        * Diagnóstico do **controlador**, não do aquário — acrescentado na
-       * rodada de confiabilidade de 2026-08-21 (UPGRADE/06). Responde "o
+       * rodada de confiabilidade de 2026-08-21. Responde "o
        * ESP32 reiniciou esta noite, e por quê?" e "a memória está caindo?",
        * perguntas que o resto de `state` não tinha como responder.
        */

@@ -94,8 +94,8 @@ export type RtcState = z.infer<typeof rtcStateSchema>;
 
 export const wifiStateSchema = z.object({
   /**
-   * Nulo quando não havia associação no instante da leitura (UPGRADE/03,
-   * F13). Antes o firmware usava `-120` como sentinela de "desconectado", e
+   * Nulo quando não havia associação no instante da leitura.
+   * Antes o firmware usava `-120` como sentinela de "desconectado", e
    * um snapshot capturado durante uma queda breve podia viajar como se fosse
    * medição real — a mesma família do bug de sentinela numérica corrigido no
    * commit `a4596fe`.
@@ -128,7 +128,7 @@ export type WifiState = z.infer<typeof wifiStateSchema>;
 /**
  * Estado do módulo de alimentação de precisão — opcional por natureza: pode
  * nunca ter sido instalado, e mesmo instalado não fica ligado o tempo todo
- * (é desenho, não defeito — ver `docs/pinagem-alimentador-modulo.md`).
+ * (é desenho, não defeito — ver `docs/hardware/modulo-alimentador.md`).
  *
  * `connected` é o único campo sempre presente quando o bloco existe. Os
  * demais só viajam quando o módulo respondeu neste ciclo; ausentes, o
@@ -171,7 +171,7 @@ export const FEEDER_MEALS_PER_24H = 3;
 /**
  * Diagnóstico do **controlador**, não do aquário — a distinção que faltava
  * para responder "o ESP32 reiniciou esta noite, e por quê?" ou "a memória
- * livre está caindo ao longo dos dias?". Ver UPGRADE/03 (F7) e UPGRADE/04 (S1).
+ * livre está caindo ao longo dos dias?".
  *
  * Bloco opcional de propósito: um firmware antigo, que ainda não o envia,
  * continua sendo aceito durante a transição.
@@ -304,7 +304,7 @@ export const telemetryRequestSchema = z.object({
 });
 export type TelemetryRequest = z.infer<typeof telemetryRequestSchema>;
 
-// ── Tolerância a dado ruim (UPGRADE/05, achado C1) ──────────────────────────
+// ── Tolerância a dado ruim ──────────────────────────────────────────────────
 
 export interface TelemetryCorrection {
   /** Caminho pontilhado do campo corrigido, ex.: `"fan.rpm"`, ou do item descartado, ex.: `"events.2"`. */
@@ -348,7 +348,7 @@ const NULLABLE_FALLBACK_PATHS = new Set(["wifi.ip", "wifi.bssid", "rtc.time", "d
 
 /**
  * Um valor fora de faixa não pode derrubar o corpo inteiro — é exatamente o
- * caminho de falha descrito em UPGRADE/05 (C1): ruído no tacômetro produz
+ * caminho de falha: ruído no tacômetro produz
  * `rpm` acima do teto, o corpo inteiro é rejeitado com 400, o firmware reenvia
  * o mesmo corpo para sempre, e o watchdog do servidor conclui que o
  * dispositivo sumiu — quando ele só tentou contar o que estava acontecendo.
@@ -443,7 +443,7 @@ export function sanitizeTelemetryRequest(raw: unknown): SanitizedTelemetry {
 }
 
 /**
- * Listas cujo item inválido é descartado sozinho (UPGRADE/07). Um evento com
+ * Listas cujo item inválido é descartado sozinho. Um evento com
  * componente que esta versão do servidor não conhece — o firmware é mais novo
  * — derrubava o POST inteiro, e com ele o estado do aquário: em produção foram
  * 136 corpos perdidos por um `comp: "feeder"` antes da integração do

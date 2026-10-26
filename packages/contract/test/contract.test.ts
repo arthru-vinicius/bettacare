@@ -111,7 +111,7 @@ describe("telemetria: requisição", () => {
   });
 });
 
-describe("saneamento de telemetria (UPGRADE/05, C1)", () => {
+describe("saneamento de telemetria", () => {
   it("grampeia rpm fora de faixa em vez de rejeitar o corpo inteiro", () => {
     // O caminho de falha documentado: ruído no tacômetro sem pull-up produz
     // uma contagem que passa de 20000 rpm — fisicamente impossível.
@@ -144,7 +144,7 @@ describe("saneamento de telemetria (UPGRADE/05, C1)", () => {
     assert.ok(r.problems.length > 0, "o motivo da recusa precisa sair para o log");
   });
 
-  it("evento com componente desconhecido sai sozinho, sem derrubar o corpo (UPGRADE/07)", () => {
+  it("evento com componente desconhecido sai sozinho, sem derrubar o corpo", () => {
     // O caso real de produção: firmware mais novo mandando `comp: "feeder"` para
     // um servidor que ainda não conhecia o alimentador — 136 POSTs perdidos.
     const r = sanitizeTelemetryRequest({

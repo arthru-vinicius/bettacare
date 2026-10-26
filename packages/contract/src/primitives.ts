@@ -36,7 +36,7 @@ export type Component = z.infer<typeof componentSchema>;
  *
  * `button` e `pot` entraram na rodada de confiabilidade de 2026-08-21: são
  * entradas físicas que também falham, e um potenciômetro com mau contato era
- * exatamente o exemplo citado como "hoje invisível" — ver UPGRADE/04 (S2).
+ * exatamente o exemplo citado como "hoje invisível".
  */
 export const AQUARIUM_COMPONENTS = [
   "temp",

@@ -26,10 +26,12 @@ void fan_init();
 void fan_update();
 
 /**
- * Volta para AUTO e exige re-calibração do potenciômetro.
+ * Tira o comando manual (app ou pot) e volta para AUTO. Se já estava no AUTO,
+ * a máquina de estados segue como está — uma ventoinha rodando continua
+ * rodando.
  *
- * Chamado na transição para o período ON da luminária. A re-calibração evita
- * que a posição residual do pot reative a ventoinha sozinha.
+ * Chamado na transição para o período ON da luminária. O pot sai do comando:
+ * a posição residual dele não reativa a ventoinha sozinha, só um giro novo.
  */
 void fan_on_schedule_reset();
 

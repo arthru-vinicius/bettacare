@@ -200,9 +200,15 @@ void fan_init() {
 }
 
 void fan_on_schedule_reset() {
+  _disarm_pot();
+  // Já no automático, a máquina de estados fica como está. Reiniciá-la em IDLE
+  // desligava, no mesmo segundo e sem evento, uma ventoinha que rodava na banda
+  // de histerese (abaixo do gatilho, acima do desligar): o IDLE só liga acima
+  // do gatilho e zera o resto. Visto em produção às 10:00 de 23 e 24/10, com a
+  // água a 28,8 e 28,3 °C.
+  if (_mode == FAN_MODE_AUTO) return;
   _mode    = FAN_MODE_AUTO;
   _auto_st = FAN_AUTO_IDLE;
-  _disarm_pot();
   _temp_failsafe_active = false;
   _escalation_floor_pct = 0;
   // Não mexe na velocidade (nem na energia) agora: `fan_update()` decide no

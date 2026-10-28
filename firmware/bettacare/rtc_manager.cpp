@@ -395,8 +395,8 @@ void rtc_check_automation() {
   _last_period_on = deveria;
   light_set(deveria, LIGHT_SRC_SCHEDULE);
   if (deveria) {
-    // Na virada para o período ON, a ventoinha volta ao automático e o pot
-    // precisa ser recalibrado.
+    // Na virada para o período ON, um comando manual da ventoinha deixa de
+    // valer e ela volta ao automático; se já estava nele, segue como está.
     fan_on_schedule_reset();
   }
   event_log(SEV_INFO, COMP_RTC, "rtc.automation",

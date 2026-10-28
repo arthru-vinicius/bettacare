@@ -1,6 +1,7 @@
 // Teste de host de fan.cpp (o arquivo real, incluído inteiro): o corte de
-// energia soltando a linha de PWM, e o potenciômetro — resposta na mesma volta,
-// comando tomado por movimento, e ruído ou deriva que não tomam.
+// energia soltando a linha de PWM, o potenciômetro — resposta na mesma volta,
+// comando tomado por movimento, e ruído ou deriva que não tomam — e a virada
+// da agenda, que não pode desligar uma ventoinha que o automático ligou.
 #include <string>
 #include <vector>
 
@@ -10,7 +11,8 @@ uint32_t g_millis = 1000;
 
 // O que o fan.cpp chama de outros módulos.
 bool  temperature_is_fresh() { return true; }
-float temperature_read() { return 26.0f; }   // abaixo do gatilho: automático parado
+static float g_temp = 26.0f;   // abaixo do gatilho: automático parado
+float temperature_read() { return g_temp; }
 DeviceConfig device_config_snapshot() {
   DeviceConfig c = {};
   c.fan_trigger_c = 29.0f;
@@ -123,6 +125,33 @@ int main() {
   g_adc += 800;
   volta(2);
   CHECK(manual(), "assumiu");
+
+  printf("A1 virada da agenda com o automatico rodando na banda: segue ligada\n");
+  fan_set_mode_auto(true);
+  g_temp = 29.5f;
+  volta();
+  CHECK(automatico() && fan_get_speed_percent() == 30 && energia(), "ligou acima do gatilho, a 30%");
+  g_temp = 28.8f;   // abaixo do gatilho, acima do desligar: a banda de histerese
+  volta(5);
+  CHECK(fan_get_speed_percent() == 30, "segue ligada na banda");
+  g_events.clear();
+  fan_on_schedule_reset();   // a luz acendendo pelo horario
+  volta(5);
+  CHECK(automatico() && fan_get_speed_percent() == 30 && energia(),
+        "a virada nao zera a ventoinha (o defeito de 23 e 24/10)");
+  g_temp = 27.0f;
+  volta();
+  CHECK(quantos("fan.cooldown") == 1 && fan_get_speed_percent() == 30,
+        "abaixo do desligar: cooldown, como sempre");
+
+  printf("A2 virada da agenda com a ventoinha no manual: volta ao automatico\n");
+  fan_set_speed(60);
+  CHECK(manual() && fan_get_speed_percent() == 60, "manual a 60%");
+  g_temp = 28.8f;
+  fan_on_schedule_reset();
+  volta();
+  CHECK(automatico() && fan_get_speed_percent() == 0 && !energia(),
+        "voltou ao automatico e, abaixo do gatilho, desligou (como o 'voltar ao automatico' do app)");
 
   printf("\n%d verificacoes ok, %d falharam\n", g_ok, g_fail);
   return g_fail ? 1 : 0;

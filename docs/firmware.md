@@ -1,6 +1,6 @@
 # Firmware do ESP32 principal
 
-O firmware de produção está em `firmware/bettacare` (versão 2.1.2). Este
+O firmware de produção está em `firmware/bettacare` (versão 2.1.3). Este
 documento explica como ele é organizado e por quê. A montagem física está em
 [`hardware/controlador-principal.md`](./hardware/controlador-principal.md); o
 módulo do alimentador, em
@@ -306,6 +306,17 @@ evento `pot.fan_speed` sai quando a mão para (eram 184 num dia de bancada). Um
 comando do app, ou a volta ao automático da agenda, tira o comando dele de
 novo: vale o último.
 
+### A virada da agenda não desliga a ventoinha (2.1.3)
+
+Ao acender a luz pelo horário, `fan_on_schedule_reset()` tira um comando
+manual (do app ou do pot) e devolve a ventoinha ao automático. Até a 2.1.2 ela
+reiniciava a máquina de estados **também quando a ventoinha já estava no
+automático**: o estado inicial só liga acima do gatilho e zera o resto, então
+uma ventoinha rodando na banda de histerese (abaixo do gatilho, acima do
+desligar) parava no mesmo segundo, sem evento. Em produção, às 10:00 de 23 e
+24/10, com a água a 28,8 e 28,3 °C; ela só religou ao voltar aos 29 °C, 37 e
+110 min depois. Agora, se já está no automático, a máquina segue como está.
+
 ---
 
 ## 6. Alimentador
@@ -364,8 +375,8 @@ ou o contrário, só perdem a informação nova.
 ### Verificado
 
 - **Compila** contra ESP32 core 3.3.8 e ArduinoJson 7.4.3, sem nenhum aviso nos
-  arquivos do projeto mesmo com `--warnings all`: 1.160.846 bytes (88% do
-  flash) na 2.1.2, 58 KB de RAM global (18%).
+  arquivos do projeto mesmo com `--warnings all`: 1.160.850 bytes (88% do
+  flash) na 2.1.3, 58 KB de RAM global (18%).
 - **Os quatro formatos de corpo** que o firmware emite (normal, sensor ausente,
   RTC sumido, com `ack` de recusa e eventos) validam contra
   `telemetryRequestSchema`. Entre 391 e 777 bytes.
@@ -395,10 +406,11 @@ ou o contrário, só perdem a informação nova.
   evento); 21 do termômetro — o
   -48,00 de produção descartado com o scratchpad, salto relido e descartado,
   mudança real confirmada, 85,0 de power-on e sensor perdido por leituras
-  impossíveis; e 20 da ventoinha — desligar soltando a linha de PWM, o pot
+  impossíveis; e 26 da ventoinha — desligar soltando a linha de PWM, o pot
   assumindo em 400 ms sem passar pelo mínimo, acompanhando o giro com um
-  evento só, desligando no mínimo, e ruído isolado e deriva lenta do ADC que
-  não assumem.
+  evento só, desligando no mínimo, ruído isolado e deriva lenta do ADC que
+  não assumem, e a virada da agenda mantendo ligada a ventoinha que o
+  automático ligou (o mesmo teste falha contra a 2.1.2).
 - **Firmware 2.0.2 e 2.0.3 no ESP32 da bancada** (2026-10-02): temperatura
   válida e renovada a cada ~5 s, POST com 200; ventoinha desligada com o
   tacômetro em 0 rpm por um minuto inteiro.
@@ -418,12 +430,18 @@ ou o contrário, só perdem a informação nova.
 
 ### O que os dados não explicam
 
-A luminária. As 33 trocas de oito dias batem com o horário e com o botão; só
-`light_set` escreve no GPIO23, e cada mudança vira evento. Um liga-e-desliga
-rápido que o firmware não vê só pode estar fora dele: queda de energia na
-tomada, ou o SSR (a corrente de fuga dele com a carga desligada pode manter o
-controlador da luminária meio acordado e contar um clique). A 2.1.2 só garante
-que **o firmware não reinicia com a luz acesa**.
+A luminária. O controlador dela troca de padrão de cor a cada liga-e-desliga
+rápido, e de vez em quando ela aparece com outro padrão — então em algum
+momento ela perdeu energia por uma fração de segundo. Em 14 dias de telemetria
+(14 a 28/10), todas as trocas de estado da luz batem com o horário ou com uma
+ação do usuário, e os cinco reinícios do ESP32 aconteceram com a luz apagada.
+Só `light_set` escreve no GPIO23, e cada mudança vira evento. Um liga-e-desliga
+que o firmware não comandou só pode estar fora dele: queda ou afundamento da
+tomada que a fonte de 12 V do ESP32 atravessa sem reiniciar, mau contato, ou o
+SSR — abaixo da corrente mínima de carga ele pode deixar de conduzir por meio
+ciclo, e a corrente de fuga com a carga desligada pode manter o controlador da
+luminária meio acordado. O firmware garante só que **ele mesmo não reinicia
+com a luz acesa** (2.1.2).
 
 ---
 
